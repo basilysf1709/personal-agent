@@ -1,0 +1,31 @@
+services:
+  agent:
+    build: ./agent
+    container_name: personal-agent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  bridge:
+    build: ./bridge
+    container_name: whatsapp-bridge
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - AGENT_URL=http://agent:8000
+    volumes:
+      - bridge-auth:/app/auth
+    depends_on:
+      agent:
+        condition: service_healthy
+
+volumes:
+  bridge-auth:
