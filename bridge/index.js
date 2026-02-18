@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, Browsers } = require('@whiskeysockets/baileys');
 const express = require('express');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -14,6 +14,7 @@ async function connectWhatsApp() {
 
     sock = makeWASocket({
         version: [2, 3000, 1027934701],
+        browser: Browsers.macOS('Chrome'),
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, logger),
