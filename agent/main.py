@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from agent.claude_agent import run_agent
@@ -7,6 +8,11 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="Personal Agent")
+
+# Per-sender conversation history: {sender: [messages]}
+# Keeps last 20 message pairs (user + assistant) per sender
+MAX_HISTORY = 20
+conversations: dict[str, list] = defaultdict(list)
 
 
 class IncomingAttachment(BaseModel):
@@ -49,8 +55,16 @@ async def webhook(req: WebhookRequest):
                 "mimetype": req.attachment.mimetype,
             }
 
-        result = run_agent(user_message, attachment=attachment_data)
+        history = list(conversations[req.sender])
+        result = run_agent(user_message, conversation_history=history, attachment=attachment_data)
         reply = result["text"]
+
+        # Save to conversation history (text only, skip large attachments)
+        conversations[req.sender].append({"role": "user", "content": user_message})
+        conversations[req.sender].append({"role": "assistant", "content": reply})
+        # Trim to last N pairs
+        if len(conversations[req.sender]) > MAX_HISTORY * 2:
+            conversations[req.sender] = conversations[req.sender][-(MAX_HISTORY * 2):]
         file_data = result.get("file")
         log.info(f"Reply to {req.sender}: {reply[:100]}...")
         if file_data:
