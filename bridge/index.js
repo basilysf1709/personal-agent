@@ -5,6 +5,7 @@ const qrcode = require('qrcode-terminal');
 
 const AGENT_URL = process.env.AGENT_URL || 'http://agent:8000';
 const PORT = process.env.BRIDGE_PORT || 3000;
+const OWNER_JID = process.env.OWNER_JID || '15197310464@s.whatsapp.net';
 const logger = pino({ level: 'warn' });
 
 let sock = null;
@@ -50,13 +51,15 @@ async function connectWhatsApp() {
         for (const msg of messages) {
             if (!msg.message) continue;
 
+            // Only respond to the owner
+            const sender = msg.key.remoteJid || (msg.key.fromMe ? OWNER_JID : null);
+            if (sender !== OWNER_JID) continue;
+
             const text = msg.message.conversation
                 || msg.message.extendedTextMessage?.text
                 || '';
 
             if (!text.trim()) continue;
-
-            const sender = msg.key.remoteJid;
             console.log(`[${sender}] ${text}`);
 
             try {
