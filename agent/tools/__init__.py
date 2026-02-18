@@ -1,4 +1,5 @@
 from agent.tools.web_search import web_search, WEB_SEARCH_SCHEMA
+from agent.tools.compile_latex import compile_latex, COMPILE_LATEX_SCHEMA
 
 # Tool registry: maps tool name -> {function, schema}
 # To add a new tool, import it and add an entry here.
@@ -6,6 +7,10 @@ TOOLS = {
     "web_search": {
         "function": web_search,
         "schema": WEB_SEARCH_SCHEMA,
+    },
+    "compile_latex": {
+        "function": compile_latex,
+        "schema": COMPILE_LATEX_SCHEMA,
     },
 }
 

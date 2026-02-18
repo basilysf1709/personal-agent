@@ -70,9 +70,21 @@ async function connectWhatsApp() {
                 });
                 const data = await res.json();
 
+                // Send text reply
                 if (data.reply) {
                     await sock.sendMessage(sender, { text: data.reply });
                     console.log(`[reply -> ${sender}] ${data.reply.substring(0, 100)}...`);
+                }
+
+                // Send file attachment if present
+                if (data.file) {
+                    const buffer = Buffer.from(data.file.base64, 'base64');
+                    await sock.sendMessage(sender, {
+                        document: buffer,
+                        mimetype: data.file.mimetype,
+                        fileName: data.file.filename,
+                    });
+                    console.log(`[file -> ${sender}] ${data.file.filename}`);
                 }
             } catch (err) {
                 console.error(`Failed to process message: ${err.message}`);
@@ -84,7 +96,7 @@ async function connectWhatsApp() {
 
 // Express server for sending messages programmatically
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 app.post('/send', async (req, res) => {
     const { to, text } = req.body;

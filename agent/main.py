@@ -14,17 +14,31 @@ class WebhookRequest(BaseModel):
     text: str
 
 
+class FileAttachment(BaseModel):
+    base64: str
+    filename: str
+    mimetype: str
+
+
 class WebhookResponse(BaseModel):
     reply: str
+    file: FileAttachment | None = None
 
 
 @app.post("/webhook", response_model=WebhookResponse)
 async def webhook(req: WebhookRequest):
     log.info(f"Message from {req.sender}: {req.text}")
     try:
-        reply = run_agent(req.text)
+        result = run_agent(req.text)
+        reply = result["text"]
+        file_data = result.get("file")
         log.info(f"Reply to {req.sender}: {reply[:100]}...")
-        return WebhookResponse(reply=reply)
+        if file_data:
+            log.info(f"Attachment: {file_data['filename']}")
+        return WebhookResponse(
+            reply=reply,
+            file=FileAttachment(**file_data) if file_data else None,
+        )
     except Exception as e:
         log.error(f"Agent error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

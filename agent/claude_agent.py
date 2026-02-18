@@ -1,9 +1,12 @@
+import json
 import anthropic
 from agent.tools import get_tool_schemas, run_tool
 
 SYSTEM_PROMPT = """You are a helpful personal assistant connected via WhatsApp. Be concise and conversational — this is a chat app, not an essay.
 
-You have access to tools when needed. Use web_search for current events, facts, or anything requiring up-to-date information.
+You have access to tools when needed:
+- web_search: for current events, facts, or anything requiring up-to-date information
+- compile_latex: for generating PDF documents. When asked to create a document, resume, paper, letter, cheat sheet, etc., write complete LaTeX and use this tool to compile it.
 
 Keep responses short and mobile-friendly unless the user asks for detail."""
 
@@ -11,18 +14,20 @@ MODEL = "claude-sonnet-4-5-20250929"
 MAX_TOOL_ROUNDS = 10
 
 
-def run_agent(user_message: str, conversation_history: list | None = None) -> str:
-    """Run the Claude agent loop. Returns the final text response."""
+def run_agent(user_message: str, conversation_history: list | None = None) -> dict:
+    """Run the Claude agent loop. Returns dict with 'text' and optional 'file'."""
     client = anthropic.Anthropic()
     tools = get_tool_schemas()
 
     messages = conversation_history or []
     messages.append({"role": "user", "content": user_message})
 
+    file_attachment = None
+
     for _ in range(MAX_TOOL_ROUNDS):
         response = client.messages.create(
             model=MODEL,
-            max_tokens=1024,
+            max_tokens=4096,
             system=SYSTEM_PROMPT,
             tools=tools,
             messages=messages,
@@ -39,7 +44,11 @@ def run_agent(user_message: str, conversation_history: list | None = None) -> st
 
         # If no tool calls, we're done
         if response.stop_reason == "end_turn" or not tool_uses:
-            return "\n".join(text_parts) if text_parts else "I couldn't generate a response."
+            text = "\n".join(text_parts) if text_parts else "I couldn't generate a response."
+            result = {"text": text}
+            if file_attachment:
+                result["file"] = file_attachment
+            return result
 
         # Append assistant message with all content blocks
         messages.append({"role": "assistant", "content": response.content})
@@ -54,7 +63,23 @@ def run_agent(user_message: str, conversation_history: list | None = None) -> st
                 "content": result,
             })
 
+            # Check if compile_latex returned a PDF
+            if tool_use.name == "compile_latex":
+                try:
+                    parsed = json.loads(result)
+                    if parsed.get("success") and parsed.get("pdf_base64"):
+                        file_attachment = {
+                            "base64": parsed["pdf_base64"],
+                            "filename": parsed.get("filename", "document.pdf"),
+                            "mimetype": "application/pdf",
+                        }
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
         messages.append({"role": "user", "content": tool_results})
 
-    # Exhausted tool rounds, return whatever text we have
-    return "\n".join(text_parts) if text_parts else "I used too many tool calls. Please try a simpler question."
+    text = "\n".join(text_parts) if text_parts else "I used too many tool calls. Please try a simpler question."
+    result = {"text": text}
+    if file_attachment:
+        result["file"] = file_attachment
+    return result
