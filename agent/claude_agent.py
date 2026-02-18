@@ -7,7 +7,7 @@ You have access to tools when needed. Use web_search for current events, facts, 
 
 Keep responses short and mobile-friendly unless the user asks for detail."""
 
-MODEL = "claude-3-5-haiku-20241022"
+MODEL = "claude-sonnet-4-5-20250929"
 MAX_TOOL_ROUNDS = 10
 
 
