@@ -5,6 +5,12 @@ SERVER="root@142.93.124.186"
 REMOTE_DIR="/root/personal-agent"
 REPO="git@github.com:basilysf1709/personal-agent.git"
 
+# Ensure local .env exists
+if [ ! -f .env ]; then
+    echo "ERROR: No local .env file found. Create one from .env.example"
+    exit 1
+fi
+
 echo "==> Deploying to ${SERVER}..."
 
 # Ensure Docker and git are installed on the server
@@ -34,8 +40,9 @@ ssh "$SERVER" "
     fi
 "
 
-# Ensure .env exists on server
-ssh "$SERVER" "test -f $REMOTE_DIR/.env || { echo 'ERROR: Create $REMOTE_DIR/.env with your ANTHROPIC_API_KEY first'; exit 1; }"
+# Push local .env to server
+echo "==> Syncing .env..."
+scp .env "$SERVER:$REMOTE_DIR/.env"
 
 # Build and start containers
 echo "==> Building and starting containers..."
