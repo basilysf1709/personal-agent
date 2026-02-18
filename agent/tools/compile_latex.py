@@ -4,7 +4,7 @@ import base64
 import httpx
 
 COMPILE_URL = os.environ.get("COMPILE_URL", "https://compile.useoctree.com")
-COMPILE_JWT = os.environ.get("COMPILE_JWT_TOKEN", "")
+COMPILE_JWT = os.environ.get("COMPILE_JWT_TOKEN", "") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 COMPILE_LATEX_SCHEMA = {
     "name": "compile_latex",
