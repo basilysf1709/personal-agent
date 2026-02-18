@@ -30,6 +30,9 @@ ssh "$SERVER" 'command -v git >/dev/null 2>&1 || {
     apt-get update && apt-get install -y git
 }'
 
+# Accept GitHub host key
+ssh "$SERVER" 'ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null'
+
 # Clone or pull latest
 echo "==> Pulling latest code..."
 ssh "$SERVER" "
