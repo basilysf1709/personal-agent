@@ -48,7 +48,6 @@ async function connectWhatsApp() {
         if (type !== 'notify') return;
 
         for (const msg of messages) {
-            if (msg.key.fromMe) continue;
             if (!msg.message) continue;
 
             const text = msg.message.conversation
