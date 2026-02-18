@@ -14,13 +14,44 @@ MODEL = "claude-sonnet-4-5-20250929"
 MAX_TOOL_ROUNDS = 10
 
 
-def run_agent(user_message: str, conversation_history: list | None = None) -> dict:
+def run_agent(user_message: str, conversation_history: list | None = None, attachment: dict | None = None) -> dict:
     """Run the Claude agent loop. Returns dict with 'text' and optional 'file'."""
     client = anthropic.Anthropic()
     tools = get_tool_schemas()
 
     messages = conversation_history or []
-    messages.append({"role": "user", "content": user_message})
+
+    # Build user message content
+    if attachment and attachment.get("mimetype", "").startswith("application/pdf"):
+        # Send PDF as a document to Claude
+        content = [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": attachment["base64"],
+                },
+            },
+            {"type": "text", "text": user_message},
+        ]
+    elif attachment and attachment.get("mimetype", "").startswith("image/"):
+        # Send image to Claude
+        content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": attachment["mimetype"],
+                    "data": attachment["base64"],
+                },
+            },
+            {"type": "text", "text": user_message},
+        ]
+    else:
+        content = user_message
+
+    messages.append({"role": "user", "content": content})
 
     file_attachment = None
 

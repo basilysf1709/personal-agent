@@ -55,18 +55,45 @@ async function connectWhatsApp() {
             const sender = msg.key.remoteJid;
             if (!ALLOWED_JIDS.has(sender)) continue;
 
+            // Extract text from various message types
             const text = msg.message.conversation
                 || msg.message.extendedTextMessage?.text
+                || msg.message.documentWithCaptionMessage?.message?.documentMessage?.caption
+                || msg.message.documentMessage?.caption
+                || msg.message.imageMessage?.caption
                 || '';
 
-            if (!text.trim()) continue;
-            console.log(`[${sender}] ${text}`);
+            // Extract document/image if attached
+            const docMsg = msg.message.documentWithCaptionMessage?.message?.documentMessage
+                || msg.message.documentMessage;
+            const imgMsg = msg.message.imageMessage;
+
+            if (!text.trim() && !docMsg && !imgMsg) continue;
+            console.log(`[${sender}] ${text || '(attachment)'}`);
 
             try {
+                // Download attachment if present
+                let attachment = null;
+                const mediaMsg = docMsg || imgMsg;
+                if (mediaMsg) {
+                    try {
+                        const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+                        const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
+                        attachment = {
+                            base64: buffer.toString('base64'),
+                            filename: docMsg?.fileName || 'image.jpg',
+                            mimetype: mediaMsg.mimetype || 'application/octet-stream',
+                        };
+                        console.log(`[attachment] ${attachment.filename} (${attachment.mimetype})`);
+                    } catch (dlErr) {
+                        console.error(`Failed to download attachment: ${dlErr.message}`);
+                    }
+                }
+
                 const res = await fetch(`${AGENT_URL}/webhook`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sender, text }),
+                    body: JSON.stringify({ sender, text: text || '(see attached file)', attachment }),
                 });
                 const data = await res.json();
 
