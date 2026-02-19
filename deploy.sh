@@ -51,6 +51,10 @@ scp .env "$SERVER:$REMOTE_DIR/.env"
 echo "==> Building and starting containers..."
 ssh "$SERVER" "cd $REMOTE_DIR && docker compose up -d --build"
 
+# Seed resume into agent data volume
+echo "==> Seeding resume.pdf into agent data volume..."
+ssh "$SERVER" "docker cp $REMOTE_DIR/assets/resume.pdf personal-agent:/app/data/resume.pdf"
+
 echo "==> Deployment complete!"
 echo ""
 echo "To scan the QR code:"

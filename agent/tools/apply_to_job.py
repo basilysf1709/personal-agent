@@ -1,9 +1,12 @@
 import asyncio
 import base64
+import logging
 import os
 import subprocess
 import anthropic
 from playwright.async_api import async_playwright
+
+logger = logging.getLogger(__name__)
 
 APPLY_TO_JOB_SCHEMA = {
     "name": "apply_to_job",
@@ -40,9 +43,9 @@ You are a job application assistant controlling a web browser. Your goal is to n
 
 Instructions:
 - You can see screenshots of the browser and control it with mouse/keyboard actions.
-- Find the "Apply" button and click it.
+- Find the "Apply" button or scroll down to the application form and fill it out.
 - Fill in all required fields using the applicant profile and resume information provided below.
-- Upload the resume PDF when there is a file upload field (the file is at: {resume_path}).
+- For file upload fields (resume/CV): simply click on the upload button/area. The system will automatically attach the resume PDF — you do NOT need to interact with any file dialog.
 - Submit the application when all fields are filled.
 - If the site requires login/account creation, STOP and report that to the user — do not try to create accounts.
 - If you encounter a CAPTCHA you cannot solve, STOP and report it.
@@ -107,6 +110,12 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
         )
         page = await context.new_page()
 
+        # Auto-handle file upload dialogs by attaching the resume
+        async def _handle_filechooser(fc):
+            logger.info(f"File chooser triggered, uploading: {resume_path}")
+            await fc.set_files(resume_path)
+        page.on("filechooser", lambda fc: asyncio.ensure_future(_handle_filechooser(fc)))
+
         try:
             await page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(2000)  # let JS render
@@ -151,6 +160,7 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
         summary = "Job application process did not complete."
 
         for iteration in range(MAX_ITERATIONS):
+            logger.info(f"Computer Use iteration {iteration + 1}/{MAX_ITERATIONS}")
             response = client.beta.messages.create(
                 model=MODEL,
                 max_tokens=4096,
@@ -166,6 +176,7 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
 
             if not tool_uses:
                 summary = "\n".join(text_parts) if text_parts else summary
+                logger.info(f"Computer Use agent finished: {summary[:200]}")
                 break
 
             # Append assistant message
@@ -175,6 +186,9 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
             tool_results = []
             for tool_use in tool_uses:
                 action = tool_use.input.get("action")
+                coordinate = tool_use.input.get("coordinate", [])
+                text_input = tool_use.input.get("text", "")
+                logger.info(f"  Action: {action} coordinate={coordinate} text={text_input[:50] if text_input else ''}")
                 result_content = []
 
                 try:
