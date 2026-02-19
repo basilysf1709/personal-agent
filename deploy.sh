@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-SERVER="root@142.93.124.186"
 REMOTE_DIR="/root/personal-agent"
 REPO="git@github.com:basilysf1709/personal-agent.git"
 
@@ -10,6 +9,14 @@ if [ ! -f .env ]; then
     echo "ERROR: No local .env file found. Create one from .env.example"
     exit 1
 fi
+
+# Load DEPLOY_SERVER from .env
+DEPLOY_SERVER="${DEPLOY_SERVER:-$(grep -s '^DEPLOY_SERVER=' .env | cut -d'=' -f2-)}"
+if [ -z "$DEPLOY_SERVER" ]; then
+    echo "ERROR: DEPLOY_SERVER not set. Add DEPLOY_SERVER=root@<ip> to .env or export it."
+    exit 1
+fi
+SERVER="$DEPLOY_SERVER"
 
 echo "==> Deploying to ${SERVER}..."
 
