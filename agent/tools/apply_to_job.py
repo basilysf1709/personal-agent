@@ -204,11 +204,11 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
                             },
                         }]
 
-                    elif action == "click":
+                    elif action in ("click", "left_click", "right_click", "middle_click"):
                         x = tool_use.input.get("coordinate", [0, 0])[0]
                         y = tool_use.input.get("coordinate", [0, 0])[1]
-                        button = tool_use.input.get("button", "left")
-                        pw_button = button if button in ("left", "right", "middle") else "left"
+                        button_map = {"right_click": "right", "middle_click": "middle"}
+                        pw_button = button_map.get(action, "left")
                         await page.mouse.click(x, y, button=pw_button)
                         mouse_x, mouse_y = x, y
                         await page.wait_for_timeout(500)
@@ -223,10 +223,19 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
                             },
                         }]
 
-                    elif action == "double_click":
-                        x = tool_use.input.get("coordinate", [0, 0])[0]
-                        y = tool_use.input.get("coordinate", [0, 0])[1]
-                        await page.mouse.dblclick(x, y)
+                    elif action in ("double_click", "left_click_drag"):
+                        if action == "left_click_drag":
+                            start = tool_use.input.get("start_coordinate", [0, 0])
+                            end = tool_use.input.get("coordinate", [0, 0])
+                            await page.mouse.move(start[0], start[1])
+                            await page.mouse.down()
+                            await page.mouse.move(end[0], end[1])
+                            await page.mouse.up()
+                            x, y = end[0], end[1]
+                        else:
+                            x = tool_use.input.get("coordinate", [0, 0])[0]
+                            y = tool_use.input.get("coordinate", [0, 0])[1]
+                            await page.mouse.dblclick(x, y)
                         mouse_x, mouse_y = x, y
                         await page.wait_for_timeout(500)
                         screenshot_bytes = await page.screenshot()
