@@ -147,10 +147,12 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
             logger.info(f"Uploading resume to Kernel VM: {KERNEL_RESUME_PATH}")
             with open(resume_path, "rb") as f:
                 resume_bytes = f.read()
-            await kernel_client.browsers.fs.write_file(
+            await kernel_client.browsers.fs.upload(
                 session_id,
-                resume_bytes,
-                path=KERNEL_RESUME_PATH,
+                files=[{
+                    "dest_path": KERNEL_RESUME_PATH,
+                    "file": resume_bytes,
+                }],
             )
 
         # Navigate to the job URL and set up file chooser handling via Playwright
