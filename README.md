@@ -1,1 +1,1 @@
-An agent that helps me edit my resume, search internet and apply to jobs on the cloud
+An agent that helps me edit my resume using latex, search internet and apply to jobs, running on the cloud
