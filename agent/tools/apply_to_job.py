@@ -214,7 +214,8 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
 
         for iteration in range(MAX_ITERATIONS):
             logger.info(f"Computer Use iteration {iteration + 1}/{MAX_ITERATIONS}")
-            response = client.beta.messages.create(
+            try:
+                response = client.beta.messages.create(
                 model=MODEL,
                 max_tokens=4096,
                 system=system_prompt,
@@ -223,9 +224,17 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
                 betas=["computer-use-2025-01-24"],
             )
 
+            except Exception as e:
+                logger.error(f"Claude API error on iteration {iteration + 1}: {e}")
+                summary = f"Claude API error: {e}"
+                break
+
             # Check if Claude is done (text response, no tool use)
             tool_uses = [b for b in response.content if b.type == "tool_use"]
             text_parts = [b.text for b in response.content if b.type == "text"]
+            logger.info(f"  Response: stop_reason={response.stop_reason} tool_uses={len(tool_uses)} text_parts={len(text_parts)}")
+            if text_parts:
+                logger.info(f"  Text: {text_parts[0][:300]}")
 
             if not tool_uses:
                 summary = "\n".join(text_parts) if text_parts else summary
