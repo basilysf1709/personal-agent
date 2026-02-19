@@ -90,11 +90,15 @@ async function connectWhatsApp() {
                     }
                 }
 
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 360000);
                 const res = await fetch(`${AGENT_URL}/webhook`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ sender, text: text || '(see attached file)', attachment }),
+                    signal: controller.signal,
                 });
+                clearTimeout(timeout);
                 const data = await res.json();
 
                 // Send text reply
