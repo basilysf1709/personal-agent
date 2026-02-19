@@ -151,7 +151,7 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
                 session_id,
                 files=[{
                     "dest_path": KERNEL_RESUME_PATH,
-                    "file": resume_bytes,
+                    "file": ("resume.pdf", resume_bytes, "application/pdf"),
                 }],
             )
 
