@@ -97,7 +97,7 @@ def _extract_resume_text(resume_path: str) -> str:
 async def _take_screenshot(kernel_client: AsyncKernel, session_id: str) -> str:
     """Take a screenshot via Kernel Computer Controls and return base64."""
     response = await kernel_client.browsers.computer.capture_screenshot(session_id)
-    screenshot_bytes = response.read()
+    screenshot_bytes = await response.read()
     return base64.b64encode(screenshot_bytes).decode()
 
 
