@@ -216,14 +216,13 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
             logger.info(f"Computer Use iteration {iteration + 1}/{MAX_ITERATIONS}")
             try:
                 response = client.beta.messages.create(
-                model=MODEL,
-                max_tokens=4096,
-                system=system_prompt,
-                tools=[computer_tool],
-                messages=messages,
-                betas=["computer-use-2025-01-24"],
-            )
-
+                    model=MODEL,
+                    max_tokens=4096,
+                    system=system_prompt,
+                    tools=[computer_tool],
+                    messages=messages,
+                    betas=["computer-use-2025-01-24"],
+                )
             except Exception as e:
                 logger.error(f"Claude API error on iteration {iteration + 1}: {e}")
                 summary = f"Claude API error: {e}"
