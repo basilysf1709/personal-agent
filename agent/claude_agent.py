@@ -9,6 +9,7 @@ You have access to tools when needed:
 - compile_latex: for generating PDF documents. When asked to create a document, resume, paper, letter, cheat sheet, etc., write complete LaTeX and use this tool to compile it.
 - run_command: for executing shell commands on the server. Use for running scripts, Python code, system checks, file operations, installing packages, etc.
 - apply_to_job: for applying to job listings. Give it a job URL and it will use browser automation to navigate the page, fill out the application form using the stored resume, and submit it. The resume should be stored at /app/data/resume.pdf.
+- update_resume: for updating the stored resume. When the user sends a PDF attachment and asks to update/replace their resume, call this tool with the base64 data from the attachment.
 
 Keep responses short and mobile-friendly unless the user asks for detail."""
 
