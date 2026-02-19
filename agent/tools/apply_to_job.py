@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import os
 import subprocess
 import anthropic
 from playwright.async_api import async_playwright
@@ -32,22 +33,36 @@ MAX_ITERATIONS = 30
 DISPLAY_WIDTH = 1280
 DISPLAY_HEIGHT = 800
 
+PROFILE_PATH = os.path.join(os.path.dirname(__file__), "..", "profile.md")
+
 INNER_SYSTEM_PROMPT = """\
 You are a job application assistant controlling a web browser. Your goal is to navigate a job listing page and complete the application.
 
 Instructions:
 - You can see screenshots of the browser and control it with mouse/keyboard actions.
 - Find the "Apply" button and click it.
-- Fill in all required fields using information from the resume provided below.
+- Fill in all required fields using the applicant profile and resume information provided below.
 - Upload the resume PDF when there is a file upload field (the file is at: {resume_path}).
 - Submit the application when all fields are filled.
 - If the site requires login/account creation, STOP and report that to the user — do not try to create accounts.
 - If you encounter a CAPTCHA you cannot solve, STOP and report it.
 - When you are done (application submitted, or blocked), respond with a text message summarizing what happened. Do NOT use the computer tool when you are done.
 
+Applicant profile:
+{profile_text}
+
 Resume content:
 {resume_text}
 """
+
+
+def _load_profile() -> str:
+    """Load the applicant profile from assets/profile.md."""
+    try:
+        with open(PROFILE_PATH, "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "[No profile.md found. Use resume content only.]"
 
 
 def _extract_resume_text(resume_path: str) -> str:
@@ -73,9 +88,11 @@ def _extract_resume_text(resume_path: str) -> str:
 
 async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
     """Run the Computer Use agent loop with Playwright."""
+    profile_text = _load_profile()
     resume_text = _extract_resume_text(resume_path)
     system_prompt = INNER_SYSTEM_PROMPT.format(
         resume_path=resume_path,
+        profile_text=profile_text,
         resume_text=resume_text,
     )
 
