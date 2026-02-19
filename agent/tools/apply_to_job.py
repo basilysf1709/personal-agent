@@ -3,8 +3,9 @@ import base64
 import logging
 import os
 import subprocess
+import time
 import anthropic
-from playwright.async_api import async_playwright
+from kernel import AsyncKernel
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,9 @@ DISPLAY_HEIGHT = 800
 
 PROFILE_PATH = os.path.join(os.path.dirname(__file__), "..", "profile.md")
 
+# Resume path inside the Kernel VM
+KERNEL_RESUME_PATH = "/tmp/resume.pdf"
+
 INNER_SYSTEM_PROMPT = """\
 You are a job application assistant controlling a web browser. Your goal is to navigate a job listing page and complete the application.
 
@@ -48,7 +52,8 @@ Instructions:
 - For file upload fields (resume/CV): simply click on the upload button/area. The system will automatically attach the resume PDF — you do NOT need to interact with any file dialog.
 - Submit the application when all fields are filled.
 - If the site requires login/account creation, STOP and report that to the user — do not try to create accounts.
-- If you encounter a CAPTCHA you cannot solve, STOP and report it.
+- If you see a CAPTCHA or similar test (reCAPTCHA, hCaptcha, etc.), just wait for it to get solved automatically by the browser. Take a screenshot after a few seconds to check if it was solved. Do NOT try to solve CAPTCHAs yourself.
+- If you encounter a Cloudflare challenge, wait for the "Ready" message to appear. Once it does, continue with your intended actions — do NOT click the Cloudflare checkbox, as this can interfere with the auto-solver.
 - When you are done (application submitted, or blocked), respond with a text message summarizing what happened. Do NOT use the computer tool when you are done.
 
 Applicant profile:
@@ -89,8 +94,27 @@ def _extract_resume_text(resume_path: str) -> str:
         return "[No resume file found. Ask the user to provide their details or upload a resume.]"
 
 
+async def _take_screenshot(kernel_client: AsyncKernel, session_id: str) -> str:
+    """Take a screenshot via Kernel Computer Controls and return base64."""
+    response = await kernel_client.browsers.computer.capture_screenshot(session_id)
+    screenshot_bytes = response.read()
+    return base64.b64encode(screenshot_bytes).decode()
+
+
+def _screenshot_content(screenshot_b64: str) -> list:
+    """Build image content block for Claude from base64 screenshot."""
+    return [{
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": screenshot_b64,
+        },
+    }]
+
+
 async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
-    """Run the Computer Use agent loop with Playwright."""
+    """Run the Computer Use agent loop with Kernel cloud browser."""
     profile_text = _load_profile()
     resume_text = _extract_resume_text(resume_path)
     system_prompt = INNER_SYSTEM_PROMPT.format(
@@ -99,33 +123,58 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
         resume_text=resume_text,
     )
 
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": DISPLAY_WIDTH, "height": DISPLAY_HEIGHT},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            ),
-        )
-        page = await context.new_page()
+    kernel_client = AsyncKernel(api_key=os.environ.get("KERNEL_API_KEY"))
 
-        # Auto-handle file upload dialogs by attaching the resume
-        async def _handle_filechooser(fc):
-            logger.info(f"File chooser triggered, uploading: {resume_path}")
-            await fc.set_files(resume_path)
-        page.on("filechooser", lambda fc: asyncio.ensure_future(_handle_filechooser(fc)))
+    # Create a stealth cloud browser via Kernel
+    logger.info("Creating Kernel browser session (stealth mode)...")
+    kernel_browser = await kernel_client.browsers.create(
+        stealth=True,
+        viewport={
+            "width": DISPLAY_WIDTH,
+            "height": DISPLAY_HEIGHT,
+        },
+        timeout_seconds=600,  # 10 min inactivity timeout
+    )
+    session_id = kernel_browser.session_id
+    live_view_url = kernel_browser.browser_live_view_url
+    logger.info(f"Kernel session: {session_id}")
+    if live_view_url:
+        logger.info(f"Live view: {live_view_url}")
 
+    try:
+        # Upload resume to the Kernel VM filesystem
+        if os.path.exists(resume_path):
+            logger.info(f"Uploading resume to Kernel VM: {KERNEL_RESUME_PATH}")
+            with open(resume_path, "rb") as f:
+                resume_bytes = f.read()
+            await kernel_client.browsers.fs.write_file(
+                session_id,
+                resume_bytes,
+                path=KERNEL_RESUME_PATH,
+            )
+
+        # Navigate to the job URL and set up file chooser handling via Playwright
+        logger.info(f"Navigating to {job_url}")
+        nav_code = f"""
+            // Auto-handle file upload dialogs by attaching the resume
+            page.on('filechooser', async (fc) => {{
+                await fc.setFiles('{KERNEL_RESUME_PATH}');
+            }});
+            await page.goto('{job_url}', {{ waitUntil: 'domcontentloaded', timeout: 30000 }});
+            await page.waitForTimeout(2000);
+            return 'ok';
+        """
         try:
-            await page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(2000)  # let JS render
+            await kernel_client.browsers.playwright.execute(
+                session_id,
+                code=nav_code,
+                timeout_sec=40,
+            )
         except Exception as e:
-            await browser.close()
             return f"Failed to load job URL: {e}"
 
         # Take initial screenshot
-        screenshot_bytes = await page.screenshot()
-        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
+        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
 
         client = anthropic.Anthropic()
         messages = [
@@ -156,7 +205,6 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
             "display_number": 0,
         }
 
-        mouse_x, mouse_y = 0, 0
         summary = "Job application process did not complete."
 
         for iteration in range(MAX_ITERATIONS):
@@ -193,220 +241,120 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
 
                 try:
                     if action == "screenshot":
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                        result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
-                        }]
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
 
                     elif action in ("click", "left_click", "right_click", "middle_click"):
-                        x = tool_use.input.get("coordinate", [0, 0])[0]
-                        y = tool_use.input.get("coordinate", [0, 0])[1]
+                        x, y = tool_use.input.get("coordinate", [0, 0])
                         button_map = {"right_click": "right", "middle_click": "middle"}
-                        pw_button = button_map.get(action, "left")
-                        await page.mouse.click(x, y, button=pw_button)
-                        mouse_x, mouse_y = x, y
-                        await page.wait_for_timeout(500)
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                        result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
-                        }]
+                        button = button_map.get(action, "left")
+                        await kernel_client.browsers.computer.click_mouse(
+                            session_id, x=x, y=y, button=button,
+                        )
+                        await asyncio.sleep(0.5)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
 
-                    elif action in ("double_click", "left_click_drag"):
-                        if action == "left_click_drag":
-                            start = tool_use.input.get("start_coordinate", [0, 0])
-                            end = tool_use.input.get("coordinate", [0, 0])
-                            await page.mouse.move(start[0], start[1])
-                            await page.mouse.down()
-                            await page.mouse.move(end[0], end[1])
-                            await page.mouse.up()
-                            x, y = end[0], end[1]
-                        else:
-                            x = tool_use.input.get("coordinate", [0, 0])[0]
-                            y = tool_use.input.get("coordinate", [0, 0])[1]
-                            await page.mouse.dblclick(x, y)
-                        mouse_x, mouse_y = x, y
-                        await page.wait_for_timeout(500)
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                        result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
-                        }]
+                    elif action == "double_click":
+                        x, y = tool_use.input.get("coordinate", [0, 0])
+                        await kernel_client.browsers.computer.click_mouse(
+                            session_id, x=x, y=y, num_clicks=2,
+                        )
+                        await asyncio.sleep(0.5)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
 
-                    elif action == "type":
-                        text = tool_use.input.get("text", "")
-                        await page.keyboard.type(text, delay=50)
-                        await page.wait_for_timeout(300)
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                        result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
-                        }]
+                    elif action == "triple_click":
+                        x, y = tool_use.input.get("coordinate", [0, 0])
+                        await kernel_client.browsers.computer.click_mouse(
+                            session_id, x=x, y=y, num_clicks=3,
+                        )
+                        await asyncio.sleep(0.5)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
 
-                    elif action == "key":
-                        key = tool_use.input.get("key", "")
-                        # Map Computer Use key names to Playwright key names
-                        key_map = {
-                            "Return": "Enter",
-                            "BackSpace": "Backspace",
-                            "space": " ",
-                            "Tab": "Tab",
-                            "Escape": "Escape",
-                        }
-                        pw_key = key_map.get(key, key)
-                        await page.keyboard.press(pw_key)
-                        await page.wait_for_timeout(300)
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                        result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
-                        }]
-
-                    elif action == "scroll":
-                        x = tool_use.input.get("coordinate", [DISPLAY_WIDTH // 2, DISPLAY_HEIGHT // 2])[0]
-                        y = tool_use.input.get("coordinate", [DISPLAY_WIDTH // 2, DISPLAY_HEIGHT // 2])[1]
-                        direction = tool_use.input.get("direction", "down")
-                        amount = tool_use.input.get("amount", 3)
-                        delta = amount * 100
-                        if direction == "up":
-                            delta = -delta
-                        elif direction == "left":
-                            await page.mouse.move(x, y)
-                            await page.evaluate(f"window.scrollBy(-{delta}, 0)")
-                            await page.wait_for_timeout(300)
-                            screenshot_bytes = await page.screenshot()
-                            screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                            result_content = [{
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": screenshot_b64,
-                                },
-                            }]
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tool_use.id,
-                                "content": result_content,
-                            })
-                            continue
-                        elif direction == "right":
-                            await page.mouse.move(x, y)
-                            await page.evaluate(f"window.scrollBy({delta}, 0)")
-                            await page.wait_for_timeout(300)
-                            screenshot_bytes = await page.screenshot()
-                            screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                            result_content = [{
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": screenshot_b64,
-                                },
-                            }]
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tool_use.id,
-                                "content": result_content,
-                            })
-                            continue
-
-                        await page.mouse.move(x, y)
-                        await page.mouse.wheel(0, delta)
-                        await page.wait_for_timeout(300)
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                        result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
-                        }]
-
-                    elif action == "cursor_position":
-                        result_content = [{
-                            "type": "text",
-                            "text": f"Cursor position: ({mouse_x}, {mouse_y})",
-                        }]
+                    elif action == "left_click_drag":
+                        start = tool_use.input.get("start_coordinate", [0, 0])
+                        end = tool_use.input.get("coordinate", [0, 0])
+                        await kernel_client.browsers.computer.drag_mouse(
+                            session_id,
+                            path=[start, end],
+                            button="left",
+                        )
+                        await asyncio.sleep(0.5)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
 
                     elif action == "drag":
                         start = tool_use.input.get("start_coordinate", [0, 0])
                         end = tool_use.input.get("end_coordinate", [0, 0])
-                        await page.mouse.move(start[0], start[1])
-                        await page.mouse.down()
-                        await page.mouse.move(end[0], end[1])
-                        await page.mouse.up()
-                        mouse_x, mouse_y = end[0], end[1]
-                        await page.wait_for_timeout(500)
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                        result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
-                        }]
+                        await kernel_client.browsers.computer.drag_mouse(
+                            session_id,
+                            path=[start, end],
+                        )
+                        await asyncio.sleep(0.5)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
 
-                    elif action == "triple_click":
-                        x = tool_use.input.get("coordinate", [0, 0])[0]
-                        y = tool_use.input.get("coordinate", [0, 0])[1]
-                        await page.mouse.click(x, y, click_count=3)
-                        mouse_x, mouse_y = x, y
-                        await page.wait_for_timeout(500)
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
+                    elif action == "type":
+                        text = tool_use.input.get("text", "")
+                        await kernel_client.browsers.computer.type_text(
+                            session_id, text=text, delay=50,
+                        )
+                        await asyncio.sleep(0.3)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
+
+                    elif action == "key":
+                        key = tool_use.input.get("key", "")
+                        # Kernel uses X11 keysym names
+                        key_map = {
+                            "Enter": "Return",
+                            "Backspace": "BackSpace",
+                            " ": "space",
+                        }
+                        kernel_key = key_map.get(key, key)
+                        await kernel_client.browsers.computer.press_key(
+                            session_id, keys=[kernel_key],
+                        )
+                        await asyncio.sleep(0.3)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
+
+                    elif action == "scroll":
+                        cx = tool_use.input.get("coordinate", [DISPLAY_WIDTH // 2, DISPLAY_HEIGHT // 2])[0]
+                        cy = tool_use.input.get("coordinate", [DISPLAY_WIDTH // 2, DISPLAY_HEIGHT // 2])[1]
+                        direction = tool_use.input.get("direction", "down")
+                        amount = tool_use.input.get("amount", 3)
+                        delta = amount * 100
+                        delta_x, delta_y = 0, 0
+                        if direction == "down":
+                            delta_y = delta
+                        elif direction == "up":
+                            delta_y = -delta
+                        elif direction == "right":
+                            delta_x = delta
+                        elif direction == "left":
+                            delta_x = -delta
+                        await kernel_client.browsers.computer.scroll(
+                            session_id, x=cx, y=cy, delta_x=delta_x, delta_y=delta_y,
+                        )
+                        await asyncio.sleep(0.3)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
+
+                    elif action == "cursor_position":
+                        pos = await kernel_client.browsers.computer.get_mouse_position(session_id)
                         result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
+                            "type": "text",
+                            "text": f"Cursor position: ({pos.x}, {pos.y})",
                         }]
 
                     elif action == "wait":
                         duration = tool_use.input.get("duration", 2)
-                        await page.wait_for_timeout(int(duration * 1000))
-                        screenshot_bytes = await page.screenshot()
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
-                        result_content = [{
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": screenshot_b64,
-                            },
-                        }]
+                        await asyncio.sleep(duration)
+                        screenshot_b64 = await _take_screenshot(kernel_client, session_id)
+                        result_content = _screenshot_content(screenshot_b64)
 
                     else:
                         result_content = [{
@@ -428,7 +376,13 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
 
             messages.append({"role": "user", "content": tool_results})
 
-        await browser.close()
+    finally:
+        # Clean up the Kernel browser session
+        try:
+            await kernel_client.browsers.delete_by_id(session_id)
+            logger.info(f"Kernel session {session_id} deleted")
+        except Exception as e:
+            logger.warning(f"Failed to delete Kernel session: {e}")
 
     return summary
 
@@ -442,7 +396,7 @@ def apply_to_job(job_url: str, resume_path: str = "/app/data/resume.pdf") -> str
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 result = pool.submit(
                     asyncio.run, _run_computer_use_loop(job_url, resume_path)
-                ).result(timeout=300)
+                ).result(timeout=600)
             return result
         else:
             return loop.run_until_complete(

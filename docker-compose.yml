@@ -3,7 +3,6 @@ services:
     build: ./agent
     container_name: personal-agent
     restart: unless-stopped
-    ipc: host
     ports:
       - "8000:8000"
     env_file:
