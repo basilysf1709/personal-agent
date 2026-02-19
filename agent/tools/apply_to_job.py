@@ -142,18 +142,21 @@ async def _run_computer_use_loop(job_url: str, resume_path: str) -> str:
         logger.info(f"Live view: {live_view_url}")
 
     try:
-        # Upload resume to the Kernel VM filesystem
+        # Upload resume to the Kernel VM via Playwright execute
         if os.path.exists(resume_path):
             logger.info(f"Uploading resume to Kernel VM: {KERNEL_RESUME_PATH}")
             with open(resume_path, "rb") as f:
-                resume_bytes = f.read()
-            await kernel_client.browsers.fs.upload(
-                session_id,
-                files=[{
-                    "dest_path": KERNEL_RESUME_PATH,
-                    "file": ("resume.pdf", resume_bytes, "application/pdf"),
-                }],
+                resume_b64 = base64.b64encode(f.read()).decode()
+            upload_code = f"""
+                const fs = require('fs');
+                const data = Buffer.from(`{resume_b64}`, 'base64');
+                fs.writeFileSync('{KERNEL_RESUME_PATH}', data);
+                return 'wrote ' + data.length + ' bytes';
+            """
+            upload_result = await kernel_client.browsers.playwright.execute(
+                session_id, code=upload_code, timeout_sec=15,
             )
+            logger.info(f"Resume upload: {upload_result.result}")
 
         # Navigate to the job URL and set up file chooser handling via Playwright
         logger.info(f"Navigating to {job_url}")
