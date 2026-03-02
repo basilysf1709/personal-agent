@@ -14,12 +14,14 @@ STATE_PATH = os.environ.get(
 
 DEFAULT_STATE: dict[str, Any] = {
     "enabled": False,
-    "cron_hours": [9, 17],
-    "cron_minutes": [0, 0],
+    "image_hours": [9],
+    "image_minutes": [0],
+    "reel_hours": [17],
+    "reel_minutes": [0],
     "timezone": "America/Toronto",
-    "platforms": ["instagram", "tiktok"],
+    "platforms": ["instagram"],
     "category_pointer": 0,
-    "posts": [],  # list of {id, category, title, platform_results, created_at}
+    "posts": [],
 }
 
 CATEGORIES = [
@@ -79,6 +81,7 @@ def record_post(
     category: str,
     title: str,
     platform_results: dict[str, str],
+    post_type: str = "image",
 ) -> None:
     """Append a post record and save."""
     state["posts"].append(
@@ -86,6 +89,7 @@ def record_post(
             "id": post_id,
             "category": category,
             "title": title,
+            "post_type": post_type,
             "platform_results": platform_results,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

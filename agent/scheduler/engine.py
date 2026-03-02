@@ -12,6 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 from agent.scheduler import state
 from agent.scheduler.content_generator import generate_content
 from agent.scheduler.image_renderer import render_image
+from agent.scheduler.video_renderer import render_video
 from agent.scheduler.platforms import instagram, tiktok
 
 log = logging.getLogger(__name__)
@@ -38,88 +39,121 @@ def _notify_whatsapp(message: str) -> None:
         log.warning("WhatsApp notification failed: %s", e)
 
 
-def run_post_cycle() -> str:
-    """Generate content, render image, and post to configured platforms.
-
-    Returns a summary string.
-    """
+def _generate_and_render(post_type: str) -> tuple[str, str, dict, str]:
+    """Generate content, render media. Returns (post_id, title, content, media_path)."""
     s = state.load()
     category = state.next_category(s)
     recent = state.recent_titles(s)
 
-    # Generate content
-    log.info("Generating content for category: %s", category)
-    try:
-        content = generate_content(category, recent)
-    except Exception as e:
-        msg = f"Content generation failed: {e}"
-        log.error(msg)
-        state.save(s)  # save the advanced pointer
-        return msg
+    log.info("Generating content for %s (%s)", post_type, category)
+    content = generate_content(category, recent)
 
     post_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     title = content["title"]
 
-    # Render image
+    # Always render the LaTeX image first (needed for both image and video)
     log.info("Rendering image for: %s", title)
+    image_path = render_image(
+        post_id=post_id,
+        category=category,
+        title=title,
+        body=content["body"],
+        latex=content.get("latex"),
+    )
+
+    if post_type == "reel":
+        log.info("Rendering video for: %s", title)
+        media_path = render_video(post_id, image_path)
+    else:
+        media_path = image_path
+
+    return post_id, title, content, category
+
+
+def run_image_post() -> str:
+    """Generate content and post as an image."""
+    s = state.load()
     try:
-        image_path = render_image(
-            post_id=post_id,
-            category=category,
-            title=title,
-            body=content["body"],
-            latex=content.get("latex"),
-            code=content.get("code"),
-            code_language=content.get("code_language"),
-            hashtags=content.get("hashtags"),
-        )
+        post_id, title, content, category = _generate_and_render("image")
     except Exception as e:
-        msg = f"Image rendering failed: {e}"
+        msg = f"Image post failed: {e}"
         log.error(msg)
         state.save(s)
         return msg
 
     caption = content.get("caption", title)
-
-    # Post to platforms
     platform_results = {}
-    platforms = s.get("platforms", ["instagram", "tiktok"])
 
-    if "instagram" in platforms:
-        log.info("Posting to Instagram...")
+    if "instagram" in s.get("platforms", []):
+        log.info("Publishing image to Instagram...")
         platform_results["instagram"] = instagram.publish(post_id, caption)
 
-    if "tiktok" in platforms:
-        log.info("Posting to TikTok...")
-        platform_results["tiktok"] = tiktok.publish(image_path, caption)
+    state.record_post(s, post_id, category, title, platform_results, post_type="image")
 
-    # Record post
-    state.record_post(s, post_id, category, title, platform_results)
-
-    # Build summary
-    summary_parts = [f"Posted: {title}", f"Category: {category.replace('_', ' ')}"]
-    for platform, result in platform_results.items():
-        status = result.get("status", "unknown")
-        detail = result.get("detail", result.get("media_id", result.get("publish_id", "")))
-        summary_parts.append(f"  {platform}: {status}" + (f" ({detail})" if detail else ""))
-
-    summary = "\n".join(summary_parts)
-    log.info("Post cycle complete:\n%s", summary)
-
-    # Notify via WhatsApp
-    _notify_whatsapp(f"📱 Auto-post complete!\n\n{summary}")
-
+    summary = _build_summary(title, category, platform_results, "image")
+    _notify_whatsapp(f"📸 Image post complete!\n\n{summary}")
     return summary
 
 
-async def _scheduled_post():
-    """Async wrapper for the cron job."""
+def run_reel_post() -> str:
+    """Generate content and post as a Reel video."""
+    s = state.load()
     try:
-        summary = run_post_cycle()
-        log.info("Scheduled post result: %s", summary)
+        post_id, title, content, category = _generate_and_render("reel")
     except Exception as e:
-        log.error("Scheduled post failed: %s", e, exc_info=True)
-        _notify_whatsapp(f"❌ Scheduled post failed: {e}")
+        msg = f"Reel post failed: {e}"
+        log.error(msg)
+        state.save(s)
+        return msg
+
+    caption = content.get("caption", title)
+    platform_results = {}
+
+    if "instagram" in s.get("platforms", []):
+        log.info("Publishing reel to Instagram...")
+        platform_results["instagram_reel"] = instagram.publish_reel(post_id, caption)
+
+    state.record_post(s, post_id, category, title, platform_results, post_type="reel")
+
+    summary = _build_summary(title, category, platform_results, "reel")
+    _notify_whatsapp(f"🎬 Reel post complete!\n\n{summary}")
+    return summary
+
+
+def run_post_cycle() -> str:
+    """Run an image post (backwards compat for manual triggers)."""
+    return run_image_post()
+
+
+def _build_summary(title: str, category: str, platform_results: dict, post_type: str) -> str:
+    parts = [f"[{post_type.upper()}] Posted: {title}", f"Category: {category.replace('_', ' ')}"]
+    for platform, result in platform_results.items():
+        status = result.get("status", "unknown")
+        detail = result.get("detail", result.get("media_id", ""))
+        parts.append(f"  {platform}: {status}" + (f" ({detail})" if detail else ""))
+    summary = "\n".join(parts)
+    log.info("Post cycle complete:\n%s", summary)
+    return summary
+
+
+async def _scheduled_image_post():
+    """Async wrapper for scheduled image posts."""
+    try:
+        summary = run_image_post()
+        log.info("Scheduled image post: %s", summary)
+    except Exception as e:
+        log.error("Scheduled image post failed: %s", e, exc_info=True)
+        _notify_whatsapp(f"❌ Image post failed: {e}")
+
+
+async def _scheduled_reel_post():
+    """Async wrapper for scheduled reel posts."""
+    try:
+        summary = run_reel_post()
+        log.info("Scheduled reel post: %s", summary)
+    except Exception as e:
+        log.error("Scheduled reel post failed: %s", e, exc_info=True)
+        _notify_whatsapp(f"❌ Reel post failed: {e}")
 
 
 def _rebuild_jobs() -> None:
@@ -127,7 +161,6 @@ def _rebuild_jobs() -> None:
     if scheduler is None:
         return
 
-    # Remove existing scheduler jobs
     scheduler.remove_all_jobs()
 
     s = state.load()
@@ -135,18 +168,32 @@ def _rebuild_jobs() -> None:
         return
 
     tz = s.get("timezone", "America/Toronto")
-    hours = s.get("cron_hours", [9, 17])
-    minutes = s.get("cron_minutes", [0, 0])
 
-    for i, (h, m) in enumerate(zip(hours, minutes)):
+    # Image post schedule
+    img_hours = s.get("image_hours", [9])
+    img_minutes = s.get("image_minutes", [0])
+    for i, (h, m) in enumerate(zip(img_hours, img_minutes)):
         trigger = CronTrigger(hour=h, minute=m, timezone=tz)
         scheduler.add_job(
-            _scheduled_post,
+            _scheduled_image_post,
             trigger=trigger,
-            id=f"content_post_{i}",
+            id=f"image_post_{i}",
             replace_existing=True,
         )
-        log.info("Scheduled post job: %02d:%02d %s", h, m, tz)
+        log.info("Scheduled image post: %02d:%02d %s", h, m, tz)
+
+    # Reel post schedule
+    reel_hours = s.get("reel_hours", [17])
+    reel_minutes = s.get("reel_minutes", [0])
+    for i, (h, m) in enumerate(zip(reel_hours, reel_minutes)):
+        trigger = CronTrigger(hour=h, minute=m, timezone=tz)
+        scheduler.add_job(
+            _scheduled_reel_post,
+            trigger=trigger,
+            id=f"reel_post_{i}",
+            replace_existing=True,
+        )
+        log.info("Scheduled reel post: %02d:%02d %s", h, m, tz)
 
 
 def start_scheduler() -> None:
@@ -176,7 +223,7 @@ def enable() -> str:
     s["enabled"] = True
     state.save(s)
     _rebuild_jobs()
-    return "Scheduler enabled. Posts will be published on schedule."
+    return "Scheduler enabled."
 
 
 def disable() -> str:
@@ -185,7 +232,7 @@ def disable() -> str:
     s["enabled"] = False
     state.save(s)
     _rebuild_jobs()
-    return "Scheduler disabled. No more auto-posts until re-enabled."
+    return "Scheduler disabled."
 
 
 def get_status() -> str:
@@ -193,8 +240,10 @@ def get_status() -> str:
     s = state.load()
     enabled = s.get("enabled", False)
     tz = s.get("timezone", "America/Toronto")
-    hours = s.get("cron_hours", [9, 17])
-    minutes = s.get("cron_minutes", [0, 0])
+    img_hours = s.get("image_hours", [9])
+    img_minutes = s.get("image_minutes", [0])
+    reel_hours = s.get("reel_hours", [17])
+    reel_minutes = s.get("reel_minutes", [0])
     platforms = s.get("platforms", [])
     cat_idx = s.get("category_pointer", 0) % len(state.CATEGORIES)
     next_cat = state.CATEGORIES[cat_idx]
@@ -202,7 +251,8 @@ def get_status() -> str:
 
     lines = [
         f"Status: {'ACTIVE' if enabled else 'PAUSED'}",
-        f"Schedule: {', '.join(f'{h:02d}:{m:02d}' for h, m in zip(hours, minutes))} ({tz})",
+        f"Image schedule: {', '.join(f'{h:02d}:{m:02d}' for h, m in zip(img_hours, img_minutes))} ({tz})",
+        f"Reel schedule:  {', '.join(f'{h:02d}:{m:02d}' for h, m in zip(reel_hours, reel_minutes))} ({tz})",
         f"Platforms: {', '.join(platforms) if platforms else 'none'}",
         f"Next category: {next_cat.replace('_', ' ')}",
         f"Total posts: {len(posts)}",
@@ -212,7 +262,8 @@ def get_status() -> str:
         recent = posts[-3:]
         lines.append("\nRecent posts:")
         for p in reversed(recent):
-            lines.append(f"  - [{p['category'].replace('_', ' ')}] {p['title']} ({p['created_at'][:16]})")
+            ptype = p.get("post_type", "image")
+            lines.append(f"  - [{ptype}] [{p['category'].replace('_', ' ')}] {p['title']} ({p['created_at'][:16]})")
 
     if scheduler:
         jobs = scheduler.get_jobs()
@@ -225,8 +276,10 @@ def get_status() -> str:
 
 
 def update_config(
-    cron_hours: list[int] | None = None,
-    cron_minutes: list[int] | None = None,
+    image_hours: list[int] | None = None,
+    image_minutes: list[int] | None = None,
+    reel_hours: list[int] | None = None,
+    reel_minutes: list[int] | None = None,
     timezone: str | None = None,
     platforms: list[str] | None = None,
 ) -> str:
@@ -234,16 +287,25 @@ def update_config(
     s = state.load()
     changes = []
 
-    if cron_hours is not None:
-        s["cron_hours"] = cron_hours
-        if cron_minutes is None:
-            # Pad minutes to match hours length
-            s["cron_minutes"] = [0] * len(cron_hours)
-        changes.append(f"hours={cron_hours}")
+    if image_hours is not None:
+        s["image_hours"] = image_hours
+        if image_minutes is None:
+            s["image_minutes"] = [0] * len(image_hours)
+        changes.append(f"image_hours={image_hours}")
 
-    if cron_minutes is not None:
-        s["cron_minutes"] = cron_minutes
-        changes.append(f"minutes={cron_minutes}")
+    if image_minutes is not None:
+        s["image_minutes"] = image_minutes
+        changes.append(f"image_minutes={image_minutes}")
+
+    if reel_hours is not None:
+        s["reel_hours"] = reel_hours
+        if reel_minutes is None:
+            s["reel_minutes"] = [0] * len(reel_hours)
+        changes.append(f"reel_hours={reel_hours}")
+
+    if reel_minutes is not None:
+        s["reel_minutes"] = reel_minutes
+        changes.append(f"reel_minutes={reel_minutes}")
 
     if timezone is not None:
         s["timezone"] = timezone

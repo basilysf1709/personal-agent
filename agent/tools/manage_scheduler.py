@@ -9,42 +9,43 @@ log = logging.getLogger(__name__)
 MANAGE_SCHEDULER_SCHEMA = {
     "name": "manage_scheduler",
     "description": (
-        "Control the automated content scheduler that posts educational content "
-        "(math, coding tips, science facts, quotes, tech insights, etc.) to "
-        "Instagram and TikTok. Actions: start, stop, status, post_now, update."
+        "Control the automated content scheduler that posts LaTeX equations "
+        "to Instagram as images and Reels. "
+        "Actions: start, stop, status, post_image, post_reel, update."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["start", "stop", "status", "post_now", "update"],
+                "enum": ["start", "stop", "status", "post_image", "post_reel", "update"],
                 "description": (
-                    "start = enable auto-posting schedule, "
-                    "stop = disable it, "
-                    "status = show current config and recent posts, "
-                    "post_now = trigger an immediate post, "
-                    "update = change schedule/platform config"
+                    "start = enable auto-posting, "
+                    "stop = disable, "
+                    "status = show config & recent posts, "
+                    "post_image = trigger immediate image post, "
+                    "post_reel = trigger immediate reel post, "
+                    "update = change schedule config"
                 ),
             },
-            "cron_hours": {
+            "image_hours": {
                 "type": "array",
                 "items": {"type": "integer"},
-                "description": "Hours to post at (24h format), e.g. [9, 17]. Only for 'update' action.",
+                "description": "Hours for image posts (24h format). Only for 'update'.",
             },
-            "cron_minutes": {
+            "reel_hours": {
                 "type": "array",
                 "items": {"type": "integer"},
-                "description": "Minutes to post at, matching cron_hours. Only for 'update' action.",
+                "description": "Hours for reel posts (24h format). Only for 'update'.",
             },
             "timezone": {
                 "type": "string",
-                "description": "Timezone string, e.g. 'America/Toronto'. Only for 'update' action.",
+                "description": "Timezone string, e.g. 'America/Toronto'. Only for 'update'.",
             },
             "platforms": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Platforms to post to: ['instagram', 'tiktok']. Only for 'update' action.",
+                "description": "Platforms to post to: ['instagram']. Only for 'update'.",
             },
         },
         "required": ["action"],
@@ -54,36 +55,35 @@ MANAGE_SCHEDULER_SCHEMA = {
 
 def manage_scheduler(
     action: str,
-    cron_hours: list[int] | None = None,
-    cron_minutes: list[int] | None = None,
+    image_hours: list[int] | None = None,
+    reel_hours: list[int] | None = None,
     timezone: str | None = None,
     platforms: list[str] | None = None,
+    **kwargs,
 ) -> str:
     """Execute a scheduler management action."""
     try:
         if action == "start":
             return engine.enable()
-
         elif action == "stop":
             return engine.disable()
-
         elif action == "status":
             return engine.get_status()
-
+        elif action == "post_image":
+            return engine.run_image_post()
+        elif action == "post_reel":
+            return engine.run_reel_post()
         elif action == "post_now":
-            return engine.run_post_cycle()
-
+            return engine.run_image_post()
         elif action == "update":
             return engine.update_config(
-                cron_hours=cron_hours,
-                cron_minutes=cron_minutes,
+                image_hours=image_hours,
+                reel_hours=reel_hours,
                 timezone=timezone,
                 platforms=platforms,
             )
-
         else:
-            return f"Unknown action: {action}. Use: start, stop, status, post_now, update."
-
+            return f"Unknown action: {action}. Use: start, stop, status, post_image, post_reel, update."
     except Exception as e:
         log.error("Scheduler action '%s' failed: %s", action, e, exc_info=True)
         return f"Error: {e}"

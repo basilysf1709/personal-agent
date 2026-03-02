@@ -18,28 +18,18 @@ def is_configured() -> bool:
     return bool(ACCESS_TOKEN and ACCOUNT_ID and PUBLIC_BASE_URL)
 
 
-def publish(post_id: str, caption: str) -> dict[str, str]:
-    """Publish an image to Instagram.
-
-    The image must already be saved at POSTS_DIR/{post_id}.png and
-    be accessible at PUBLIC_BASE_URL/posts/{post_id}.png.
-
-    Returns {"status": "ok", "media_id": "..."} or {"status": "error", "detail": "..."}.
-    """
+def _create_container(params: dict) -> dict[str, str]:
+    """Create a media container, poll until ready, and publish."""
     if not is_configured():
         return {"status": "skipped", "detail": "Instagram not configured"}
 
-    image_url = f"{PUBLIC_BASE_URL}/posts/{post_id}.png"
+    params["access_token"] = ACCESS_TOKEN
 
     # Step 1: Create media container
     try:
         resp = httpx.post(
             f"{GRAPH_API}/{ACCOUNT_ID}/media",
-            params={
-                "image_url": image_url,
-                "caption": caption,
-                "access_token": ACCESS_TOKEN,
-            },
+            params=params,
             timeout=30.0,
         )
         data = resp.json()
@@ -54,8 +44,8 @@ def publish(post_id: str, caption: str) -> dict[str, str]:
         log.error("IG container creation failed: %s", e)
         return {"status": "error", "detail": str(e)}
 
-    # Step 2: Poll container until ready
-    for _ in range(20):
+    # Step 2: Poll container until ready (videos take longer)
+    for _ in range(40):
         try:
             status_resp = httpx.get(
                 f"{GRAPH_API}/{container_id}",
@@ -70,7 +60,7 @@ def publish(post_id: str, caption: str) -> dict[str, str]:
                 return {"status": "error", "detail": f"Container error: {error_msg}"}
         except httpx.HTTPError:
             pass
-        time.sleep(3)
+        time.sleep(5)
     else:
         return {"status": "error", "detail": "Container processing timed out"}
 
@@ -91,3 +81,19 @@ def publish(post_id: str, caption: str) -> dict[str, str]:
     except (httpx.HTTPError, KeyError) as e:
         log.error("IG publish failed: %s", e)
         return {"status": "error", "detail": str(e)}
+
+
+def publish(post_id: str, caption: str) -> dict[str, str]:
+    """Publish an image to Instagram."""
+    image_url = f"{PUBLIC_BASE_URL}/posts/{post_id}.png"
+    return _create_container({"image_url": image_url, "caption": caption})
+
+
+def publish_reel(post_id: str, caption: str) -> dict[str, str]:
+    """Publish a video as an Instagram Reel."""
+    video_url = f"{PUBLIC_BASE_URL}/posts/{post_id}.mp4"
+    return _create_container({
+        "media_type": "REELS",
+        "video_url": video_url,
+        "caption": caption,
+    })
