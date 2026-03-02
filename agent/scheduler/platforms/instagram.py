@@ -42,8 +42,13 @@ def publish(post_id: str, caption: str) -> dict[str, str]:
             },
             timeout=30.0,
         )
+        data = resp.json()
+        if "error" in data:
+            error_msg = data["error"].get("error_user_msg") or data["error"].get("message", "Unknown error")
+            log.error("IG container creation failed: %s", error_msg)
+            return {"status": "error", "detail": error_msg}
         resp.raise_for_status()
-        container_id = resp.json()["id"]
+        container_id = data["id"]
         log.info("IG container created: %s", container_id)
     except (httpx.HTTPError, KeyError) as e:
         log.error("IG container creation failed: %s", e)

@@ -1,0 +1,3 @@
+paystubgenerator.me {
+	reverse_proxy agent:8000
+}
