@@ -1,14 +1,16 @@
 """Render content to images via the Octree LaTeX compile service.
 
-Each content type gets a distinct LaTeX template with different layout,
-colors, and typography — all compiled to PDF then converted to PNG.
+Each content type gets a distinct LaTeX template. Colors rotate daily
+from a pool of 12 palettes for maximum variety.
 """
 
+import hashlib
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 
 import httpx
 
@@ -21,6 +23,29 @@ COMPILE_JWT = os.environ.get("COMPILE_JWT_TOKEN", "") or os.environ.get(
 
 POSTS_DIR = os.environ.get("POSTS_DIR", "/app/data/posts")
 
+# 12 color palettes: (bg, accent, muted_text)
+# Rotated based on post_id hash so every post looks different
+COLOR_PALETTES = [
+    ("1a1a2e", "e94560", "cccccc"),   # navy + crimson
+    ("0d1117", "58a6ff", "8b949e"),   # github dark + blue
+    ("0f0c29", "24fe41", "b0b0b0"),   # deep indigo + neon green
+    ("2d1b69", "f8e71c", "d0c4f7"),   # purple + gold
+    ("1b1b2f", "e43f5a", "9e9eb8"),   # dark blue + coral
+    ("0a0a23", "f5a623", "a0a0c0"),   # midnight + orange
+    ("0c0032", "7b2ff7", "c0b0e0"),   # dark violet + purple
+    ("1a1a1a", "ff6b35", "bbbbbb"),   # charcoal + burnt orange
+    ("0b132b", "3a86ff", "a0b4d0"),   # navy + bright blue
+    ("1c1c3c", "ff006e", "c0b0c8"),   # dark + hot pink
+    ("0d1b2a", "00f5d4", "90c0b0"),   # dark teal + cyan
+    ("191919", "ffd166", "b8b8b8"),   # black + warm yellow
+]
+
+
+def _pick_palette(post_id: str) -> tuple[str, str, str]:
+    """Pick a color palette based on post_id hash for variety."""
+    h = int(hashlib.md5(post_id.encode()).hexdigest(), 16)
+    return COLOR_PALETTES[h % len(COLOR_PALETTES)]
+
 
 def _escape_latex(text: str) -> str:
     """Escape special LaTeX characters in plain text."""
@@ -31,8 +56,7 @@ def _escape_latex(text: str) -> str:
     return text
 
 
-def _latex_preamble(bg_color: str, text_color: str = "white") -> str:
-    """Common LaTeX preamble for all templates."""
+def _latex_preamble(bg_color: str) -> str:
     return (
         "\\documentclass[border=40pt]{standalone}\n"
         "\\usepackage{amsmath,amssymb,amsfonts}\n"
@@ -45,7 +69,7 @@ def _latex_preamble(bg_color: str, text_color: str = "white") -> str:
         "\\begin{varwidth}{480pt}\n"
         "\\centering\n"
         f"\\pagecolor[HTML]{{{bg_color}}}\n"
-        f"\\color{{{text_color}}}\n\n"
+        "\\color{white}\n\n"
     )
 
 
@@ -63,15 +87,14 @@ def _branding(accent: str) -> str:
 
 # ── Templates ────────────────────────────────────────────────────
 
-def _template_equation(content: dict) -> str:
-    """Dark blue bg, centered equation, red accent."""
+def _template_equation(content: dict, bg: str, accent: str, muted: str) -> str:
     title = _escape_latex(content["title"])
     body = _escape_latex(content["body"])
     latex = content.get("latex", "")
 
-    equation_block = ""
+    eq_block = ""
     if latex:
-        equation_block = (
+        eq_block = (
             "\\vspace{40pt}\n"
             "\\begin{center}\n"
             f"  $\\displaystyle {latex}$\n"
@@ -80,34 +103,33 @@ def _template_equation(content: dict) -> str:
         )
 
     return (
-        _latex_preamble("1a1a2e")
+        _latex_preamble(bg)
         + f"{{\\fontsize{{28}}{{34}}\\selectfont\\bfseries {title}}}\\par\n"
         "\\vspace{15pt}\n"
-        "{\\color[HTML]{e94560}\\rule{80pt}{2pt}}\\par\n"
-        f"{{\\fontsize{{36}}{{44}}\\selectfont\n{equation_block}}}\\par\n"
-        f"{{\\fontsize{{16}}{{22}}\\selectfont\\color[HTML]{{cccccc}} {body}}}\\par\n"
-        + _branding("e94560")
+        f"{{\\color[HTML]{{{accent}}}\\rule{{80pt}}{{2pt}}}}\\par\n"
+        f"{{\\fontsize{{36}}{{44}}\\selectfont\n{eq_block}}}\\par\n"
+        f"{{\\fontsize{{16}}{{22}}\\selectfont\\color[HTML]{{{muted}}} {body}}}\\par\n"
+        + _branding(accent)
         + _latex_footer()
     )
 
 
-def _template_code_snippet(content: dict) -> str:
-    """Terminal-style dark bg, monospace code block, blue accent."""
+def _template_code_snippet(content: dict, bg: str, accent: str, muted: str) -> str:
     title = _escape_latex(content["title"])
     body = _escape_latex(content["body"])
     code = content.get("code", "# no code")
     lang = content.get("code_language", "Python")
 
     return (
-        _latex_preamble("0d1117")
+        _latex_preamble(bg)
         + "\\lstset{\n"
         "  basicstyle=\\ttfamily\\fontsize{14}{18}\\selectfont\\color[HTML]{e6edf3},\n"
-        "  backgroundcolor=\\color[HTML]{161b22},\n"
+        f"  backgroundcolor=\\color[HTML]{{{bg}}},\n"
         "  frame=single,\n"
-        "  rulecolor=\\color[HTML]{30363d},\n"
-        "  keywordstyle=\\color[HTML]{ff7b72},\n"
+        f"  rulecolor=\\color[HTML]{{{accent}}},\n"
+        f"  keywordstyle=\\color[HTML]{{{accent}}},\n"
         "  stringstyle=\\color[HTML]{a5d6ff},\n"
-        "  commentstyle=\\color[HTML]{8b949e},\n"
+        f"  commentstyle=\\color[HTML]{{{muted}}},\n"
         "  breaklines=true,\n"
         "  showstringspaces=false,\n"
         "  xleftmargin=10pt,\n"
@@ -121,75 +143,72 @@ def _template_code_snippet(content: dict) -> str:
         "}\n\n"
         f"{{\\fontsize{{26}}{{32}}\\selectfont\\bfseries {title}}}\\par\n"
         "\\vspace{10pt}\n"
-        "{\\color[HTML]{58a6ff}\\rule{80pt}{2pt}}\\par\n"
+        f"{{\\color[HTML]{{{accent}}}\\rule{{80pt}}{{2pt}}}}\\par\n"
         "\\vspace{5pt}\n"
-        f"{{\\fontsize{{14}}{{18}}\\selectfont\\bfseries\\color[HTML]{{58a6ff}} {_escape_latex(lang)}}}\\par\n"
+        f"{{\\fontsize{{14}}{{18}}\\selectfont\\bfseries\\color[HTML]{{{accent}}} {_escape_latex(lang)}}}\\par\n"
         "\\vspace{10pt}\n"
         f"\\begin{{lstlisting}}\n{code}\n\\end{{lstlisting}}\n"
         "\\vspace{10pt}\n"
-        f"{{\\fontsize{{16}}{{22}}\\selectfont\\color[HTML]{{8b949e}} {body}}}\\par\n"
-        + _branding("58a6ff")
+        f"{{\\fontsize{{16}}{{22}}\\selectfont\\color[HTML]{{{muted}}} {body}}}\\par\n"
+        + _branding(accent)
         + _latex_footer()
     )
 
 
-def _template_definition(content: dict) -> str:
-    """Clean dark teal bg, large title, structured explanation, green accent."""
+def _template_definition(content: dict, bg: str, accent: str, muted: str) -> str:
     title = _escape_latex(content["title"])
     body = _escape_latex(content["body"])
     key_term = _escape_latex(content.get("key_term", title))
 
     return (
-        _latex_preamble("0f0c29")
-        + "{\\fontsize{18}{22}\\selectfont\\color[HTML]{24fe41} DEFINITION}\\par\n"
+        _latex_preamble(bg)
+        + f"{{\\fontsize{{18}}{{22}}\\selectfont\\color[HTML]{{{accent}}} DEFINITION}}\\par\n"
         "\\vspace{10pt}\n"
-        "{\\color[HTML]{24fe41}\\rule{80pt}{2pt}}\\par\n"
+        f"{{\\color[HTML]{{{accent}}}\\rule{{80pt}}{{2pt}}}}\\par\n"
         "\\vspace{20pt}\n"
         f"{{\\fontsize{{34}}{{42}}\\selectfont\\bfseries {key_term}}}\\par\n"
         "\\vspace{30pt}\n"
-        f"{{\\fontsize{{18}}{{26}}\\selectfont\\color[HTML]{{d0d0d0}} {body}}}\\par\n"
-        + _branding("24fe41")
+        f"{{\\fontsize{{18}}{{26}}\\selectfont\\color[HTML]{{{muted}}} {body}}}\\par\n"
+        + _branding(accent)
         + _latex_footer()
     )
 
 
-def _template_fact(content: dict) -> str:
-    """Dark bg with huge highlighted number, orange accent."""
+def _template_fact(content: dict, bg: str, accent: str, muted: str) -> str:
     title = _escape_latex(content["title"])
     body = _escape_latex(content["body"])
     big_number = _escape_latex(content.get("big_number", "?"))
 
     return (
-        _latex_preamble("1a1a1a")
-        + "{\\fontsize{18}{22}\\selectfont\\color[HTML]{f5a623} DID YOU KNOW?}\\par\n"
+        _latex_preamble(bg)
+        + f"{{\\fontsize{{18}}{{22}}\\selectfont\\color[HTML]{{{accent}}} DID YOU KNOW?}}\\par\n"
         "\\vspace{10pt}\n"
-        "{\\color[HTML]{f5a623}\\rule{80pt}{2pt}}\\par\n"
+        f"{{\\color[HTML]{{{accent}}}\\rule{{80pt}}{{2pt}}}}\\par\n"
         "\\vspace{30pt}\n"
-        f"{{\\fontsize{{52}}{{60}}\\selectfont\\bfseries\\color[HTML]{{f5a623}} {big_number}}}\\par\n"
+        f"{{\\fontsize{{52}}{{60}}\\selectfont\\bfseries\\color[HTML]{{{accent}}} {big_number}}}\\par\n"
         "\\vspace{25pt}\n"
         f"{{\\fontsize{{24}}{{30}}\\selectfont\\bfseries {title}}}\\par\n"
         "\\vspace{20pt}\n"
-        f"{{\\fontsize{{16}}{{22}}\\selectfont\\color[HTML]{{bbbbbb}} {body}}}\\par\n"
-        + _branding("f5a623")
+        f"{{\\fontsize{{16}}{{22}}\\selectfont\\color[HTML]{{{muted}}} {body}}}\\par\n"
+        + _branding(accent)
         + _latex_footer()
     )
 
 
-def _template_quote(content: dict) -> str:
-    """Minimal dark purple bg, large italic quote, yellow accent."""
+def _template_quote(content: dict, bg: str, accent: str, muted: str) -> str:
     body = _escape_latex(content["body"])
     attribution = _escape_latex(content.get("attribution", "Unknown"))
 
     return (
-        _latex_preamble("2d1b69")
-        + "{\\fontsize{48}{48}\\selectfont\\color[HTML]{f8e71c} ``}\\par\n"
+        _latex_preamble(bg)
+        + f"{{\\fontsize{{48}}{{48}}\\selectfont\\color[HTML]{{{accent}}} ``}}\\par\n"
         "\\vspace{10pt}\n"
         f"{{\\fontsize{{24}}{{34}}\\selectfont\\itshape {body}}}\\par\n"
         "\\vspace{25pt}\n"
-        "{\\color[HTML]{f8e71c}\\rule{60pt}{2pt}}\\par\n"
+        f"{{\\color[HTML]{{{accent}}}\\rule{{60pt}}{{2pt}}}}\\par\n"
         "\\vspace{15pt}\n"
-        f"{{\\fontsize{{18}}{{22}}\\selectfont\\color[HTML]{{cccccc}} --- {attribution}}}\\par\n"
-        + _branding("f8e71c")
+        f"{{\\fontsize{{18}}{{22}}\\selectfont\\color[HTML]{{{muted}}} --- {attribution}}}\\par\n"
+        + _branding(accent)
         + _latex_footer()
     )
 
@@ -216,15 +235,10 @@ def render_image(
     hashtags: list[str] | None = None,
     content: dict | None = None,
 ) -> str:
-    """Render a LaTeX document to PNG via the Octree compile service.
-
-    If `content` dict is provided, uses content_type to pick the template.
-    Otherwise falls back to the equation template.
-    """
+    """Render a LaTeX document to PNG via the Octree compile service."""
     os.makedirs(POSTS_DIR, exist_ok=True)
     out_path = os.path.join(POSTS_DIR, f"{post_id}.png")
 
-    # Build the content dict if not provided
     if content is None:
         content = {
             "content_type": "equation",
@@ -237,7 +251,10 @@ def render_image(
 
     content_type = content.get("content_type", "equation")
     template_fn = TEMPLATES.get(content_type, _template_equation)
-    doc = template_fn(content)
+
+    # Pick colors based on post_id for daily variety
+    bg, accent, muted = _pick_palette(post_id)
+    doc = template_fn(content, bg, accent, muted)
 
     headers = {"Content-Type": "application/json"}
     if COMPILE_JWT:

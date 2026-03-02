@@ -56,8 +56,8 @@ For content_type "equation":
   "title": "Name of equation (max 50 chars)",
   "body": "One sentence about what it means",
   "latex": "Raw LaTeX math — REQUIRED, no wrappers",
-  "hashtags": ["latex", "math", ...],
-  "caption": "Try useoctree.com to compile LaTeX! #latex #math"
+  "hashtags": ["latex", "math", "equations", "stem", "science"],
+  "caption": "Creative engaging caption here. Link in bio! #latex #math #stem"
 }
 
 For content_type "code_snippet":
@@ -67,8 +67,8 @@ For content_type "code_snippet":
   "body": "One sentence explaining the tip",
   "code": "The code snippet (5-15 lines)",
   "code_language": "Python",
-  "hashtags": ["latex", "coding", "programming", ...],
-  "caption": "Try useoctree.com #latex #coding #programming"
+  "hashtags": ["coding", "programming", "developer", "tech", "latex"],
+  "caption": "Creative engaging caption here. Link in bio! #coding #programming #developer"
 }
 
 For content_type "definition":
@@ -77,8 +77,8 @@ For content_type "definition":
   "title": "The Concept Name",
   "body": "Clear 2-3 sentence explanation of the concept",
   "key_term": "The one key term being defined",
-  "hashtags": ["latex", "computerscience", "learning", ...],
-  "caption": "Try useoctree.com #latex #learning #cs"
+  "hashtags": ["computerscience", "learning", "tech", "coding", "latex"],
+  "caption": "Creative engaging caption here. Link in bio! #computerscience #learning #tech"
 }
 
 For content_type "fact":
@@ -87,8 +87,8 @@ For content_type "fact":
   "title": "Short catchy title (max 50 chars)",
   "body": "The full fact in 1-2 sentences",
   "big_number": "The key number/stat (e.g. '86 billion', '299,792,458 m/s')",
-  "hashtags": ["latex", "science", "didyouknow", ...],
-  "caption": "Try useoctree.com #latex #science #didyouknow"
+  "hashtags": ["science", "didyouknow", "facts", "stem", "latex"],
+  "caption": "Creative engaging caption here. Link in bio! #science #didyouknow #facts"
 }
 
 For content_type "quote":
@@ -97,15 +97,22 @@ For content_type "quote":
   "title": "Topic of the quote (max 30 chars)",
   "body": "The quote text itself — punchy and memorable",
   "attribution": "Person's name and role, or 'Unknown' if original",
-  "hashtags": ["latex", "motivation", "engineering", ...],
-  "caption": "Try useoctree.com #latex #motivation #engineering"
+  "hashtags": ["motivation", "engineering", "quotes", "inspiration", "latex"],
+  "caption": "Creative engaging caption here. Link in bio! #motivation #engineering #quotes"
 }
 
-Rules:
-- Always include "latex" as the first hashtag
-- Captions must start with "Try useoctree.com"
+CAPTION RULES (CRITICAL):
+- Every caption MUST include the phrase "Link in bio" somewhere
+- Be creative and engaging — write like a real social media creator
+- Use relevant emojis naturally
+- Include 3-5 hashtags at the end
+- Don't be generic — make people want to engage
+- Vary your caption style: ask questions, share insights, use hooks
+
+GENERAL RULES:
 - Keep content concise and visually appealing
-- Be creative — avoid generic or overused content"""
+- Be creative — avoid generic or overused content
+- Hashtags: 4-6 relevant ones, no # prefix in the array"""
 
 
 def generate_content(content_type: str, recent_titles: list[str]) -> dict:
