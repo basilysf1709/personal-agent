@@ -25,15 +25,15 @@ DEFAULT_STATE: dict[str, Any] = {
 }
 
 CATEGORIES = [
-    "math_equations",
-    "coding_tips",
-    "science_facts",
-    "motivational_quotes",
-    "tech_insights",
-    "algorithm_visualizations",
-    "physics_concepts",
-    "historical_tech_moments",
+    "equation",
+    "code_snippet",
+    "definition",
+    "fact",
+    "quote",
 ]
+
+# Alias for content_generator.py
+CONTENT_TYPES = CATEGORIES
 
 
 def _ensure_dir():

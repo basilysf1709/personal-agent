@@ -40,34 +40,32 @@ def _notify_whatsapp(message: str) -> None:
 
 
 def _generate_and_render(post_type: str) -> tuple[str, str, dict, str]:
-    """Generate content, render media. Returns (post_id, title, content, media_path)."""
+    """Generate content, render media. Returns (post_id, title, content, content_type)."""
     s = state.load()
-    category = state.next_category(s)
+    content_type = state.next_category(s)
     recent = state.recent_titles(s)
 
-    log.info("Generating content for %s (%s)", post_type, category)
-    content = generate_content(category, recent)
+    log.info("Generating content for %s (%s)", post_type, content_type)
+    content = generate_content(content_type, recent)
 
     post_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     title = content["title"]
 
-    # Always render the LaTeX image first (needed for both image and video)
-    log.info("Rendering image for: %s", title)
+    # Render the image (template chosen based on content_type)
+    log.info("Rendering image for: %s [%s]", title, content_type)
     image_path = render_image(
         post_id=post_id,
-        category=category,
+        category=content_type,
         title=title,
         body=content["body"],
-        latex=content.get("latex"),
+        content=content,
     )
 
     if post_type == "reel":
         log.info("Rendering video for: %s", title)
-        media_path = render_video(post_id, image_path)
-    else:
-        media_path = image_path
+        render_video(post_id, image_path)
 
-    return post_id, title, content, category
+    return post_id, title, content, content_type
 
 
 def run_image_post() -> str:

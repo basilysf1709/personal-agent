@@ -1,97 +1,127 @@
-"""Claude-based content generation with variety enforcement."""
+"""Claude-based content generation with variety across content types."""
 
 import json
 import logging
 
 import anthropic
 
-from agent.scheduler.state import CATEGORIES
+from agent.scheduler.state import CONTENT_TYPES
 
 log = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-5-20250929"
 
-CATEGORY_PROMPTS: dict[str, str] = {
-    "math_equations": (
-        "Generate a visually striking mathematical equation, identity, or formula. "
-        "Choose from: calculus, linear algebra, number theory, topology, probability, combinatorics. "
-        "The LaTeX field is REQUIRED — provide a beautiful, non-trivial equation."
+# Each content type has its own prompt and expected fields
+TYPE_PROMPTS: dict[str, str] = {
+    "equation": (
+        "Generate a visually striking mathematical or scientific equation. "
+        "Pick from: calculus, linear algebra, number theory, physics, information theory, "
+        "thermodynamics, quantum mechanics, relativity, signal processing, probability. "
+        "Examples: Euler's identity, Fourier transform, Schrodinger equation, Bayes' theorem, "
+        "Maxwell's equations, Navier-Stokes, Boltzmann distribution, Master theorem."
     ),
-    "coding_tips": (
-        "Generate a famous or beautiful equation from computer science or information theory. "
-        "Examples: Shannon entropy, Big-O recurrences, Bellman equation, RSA, Bayes' theorem. "
-        "The LaTeX field is REQUIRED."
+    "code_snippet": (
+        "Generate a practical, elegant coding tip with a short code snippet (5-15 lines). "
+        "Pick a language from: Python, Go, Rust, TypeScript, C, Java, Haskell. "
+        "Topics: clever stdlib usage, performance tricks, elegant patterns, one-liners, "
+        "concurrency patterns, functional tricks, data structure hacks, API design."
     ),
-    "science_facts": (
-        "Generate a famous scientific equation or formula. "
-        "Cover: thermodynamics, chemistry, biology, astronomy, neuroscience. "
-        "Examples: Drake equation, Nernst equation, Boltzmann distribution. "
-        "The LaTeX field is REQUIRED."
+    "definition": (
+        "Explain a computer science, math, or engineering concept clearly and concisely. "
+        "Topics: data structures, algorithms, design patterns, networking protocols, "
+        "cryptography primitives, type systems, complexity classes, database internals, "
+        "compiler concepts, OS concepts, distributed systems, category theory."
     ),
-    "motivational_quotes": (
-        "Generate a beautiful mathematical identity or theorem. "
-        "Examples: Ramanujan's infinite series, continued fractions, golden ratio identities. "
-        "The LaTeX field is REQUIRED."
+    "fact": (
+        "Generate a mind-blowing science, math, or tech fact with a key number or measurement. "
+        "Topics: biology, astronomy, neuroscience, computing history, physics, chemistry, "
+        "internet scale, hardware limits, mathematical curiosities, nature's patterns."
     ),
-    "tech_insights": (
-        "Generate an equation from systems/engineering. "
-        "Examples: Amdahl's law, Little's law, queuing theory, CAP theorem formalization. "
-        "The LaTeX field is REQUIRED."
-    ),
-    "algorithm_visualizations": (
-        "Generate a key algorithm recurrence or complexity equation. "
-        "Examples: Master theorem, DP recurrences, graph algorithm bounds. "
-        "The LaTeX field is REQUIRED."
-    ),
-    "physics_concepts": (
-        "Generate a beautiful physics equation. "
-        "Cover: mechanics, electromagnetism, thermodynamics, quantum mechanics, relativity, optics. "
-        "Examples: Maxwell's equations, Schrodinger equation, Einstein field equations. "
-        "The LaTeX field is REQUIRED."
-    ),
-    "historical_tech_moments": (
-        "Generate a historically significant mathematical equation or formula. "
-        "Examples: Euler's formula, Fourier transform, Laplace transform, Gauss's law. "
-        "The LaTeX field is REQUIRED."
+    "quote": (
+        "Generate a sharp, memorable quote for engineers, builders, and creators. "
+        "It can be a famous quote from a real person (scientist, engineer, mathematician, "
+        "programmer) OR an original insightful quote. Must feel authentic and punchy."
     ),
 }
 
 SYSTEM_PROMPT = """\
-You are a content creator for educational social media posts showcasing beautiful LaTeX equations.
-Every post MUST feature a LaTeX equation as the centerpiece.
+You are a content creator for educational social media posts. Each post promotes useoctree.com (a LaTeX compiler).
+You will be given a content_type — generate content matching that type exactly.
 
-Respond ONLY with valid JSON in this exact format:
+Respond ONLY with valid JSON matching the content_type:
+
+For content_type "equation":
 {
-  "title": "Name of the equation/formula (max 50 chars)",
-  "body": "One sentence explaining what this equation means or why it matters",
-  "latex": "The LaTeX equation (just the math, no document wrapper) — THIS IS REQUIRED",
-  "hashtags": ["latex", "math", "equations"],
-  "caption": "Try useoctree.com to compile LaTeX instantly! #latex"
+  "content_type": "equation",
+  "title": "Name of equation (max 50 chars)",
+  "body": "One sentence about what it means",
+  "latex": "Raw LaTeX math — REQUIRED, no wrappers",
+  "hashtags": ["latex", "math", ...],
+  "caption": "Try useoctree.com to compile LaTeX! #latex #math"
+}
+
+For content_type "code_snippet":
+{
+  "content_type": "code_snippet",
+  "title": "Short title (max 50 chars)",
+  "body": "One sentence explaining the tip",
+  "code": "The code snippet (5-15 lines)",
+  "code_language": "Python",
+  "hashtags": ["latex", "coding", "programming", ...],
+  "caption": "Try useoctree.com #latex #coding #programming"
+}
+
+For content_type "definition":
+{
+  "content_type": "definition",
+  "title": "The Concept Name",
+  "body": "Clear 2-3 sentence explanation of the concept",
+  "key_term": "The one key term being defined",
+  "hashtags": ["latex", "computerscience", "learning", ...],
+  "caption": "Try useoctree.com #latex #learning #cs"
+}
+
+For content_type "fact":
+{
+  "content_type": "fact",
+  "title": "Short catchy title (max 50 chars)",
+  "body": "The full fact in 1-2 sentences",
+  "big_number": "The key number/stat (e.g. '86 billion', '299,792,458 m/s')",
+  "hashtags": ["latex", "science", "didyouknow", ...],
+  "caption": "Try useoctree.com #latex #science #didyouknow"
+}
+
+For content_type "quote":
+{
+  "content_type": "quote",
+  "title": "Topic of the quote (max 30 chars)",
+  "body": "The quote text itself — punchy and memorable",
+  "attribution": "Person's name and role, or 'Unknown' if original",
+  "hashtags": ["latex", "motivation", "engineering", ...],
+  "caption": "Try useoctree.com #latex #motivation #engineering"
 }
 
 Rules:
-- The LaTeX field is REQUIRED — never return null
-- Title: name of the equation (e.g. "Euler's Identity", "Fourier Transform")
-- Body: one short sentence about the equation
-- LaTeX: the equation itself, raw LaTeX math (no \\begin{document}, no $$ wrappers)
-- Hashtags: always include "latex" as the first tag, then 2-4 relevant math/science tags
-- Caption: always start with "Try useoctree.com" and include #latex"""
+- Always include "latex" as the first hashtag
+- Captions must start with "Try useoctree.com"
+- Keep content concise and visually appealing
+- Be creative — avoid generic or overused content"""
 
 
-def generate_content(category: str, recent_titles: list[str]) -> dict:
-    """Generate content for a given category using Claude.
+def generate_content(content_type: str, recent_titles: list[str]) -> dict:
+    """Generate content for a given content type using Claude.
 
-    Returns dict with keys: title, body, latex, code, code_language, hashtags, caption
+    Returns a dict with type-specific fields.
     """
-    if category not in CATEGORY_PROMPTS:
-        raise ValueError(f"Unknown category: {category}. Valid: {CATEGORIES}")
+    if content_type not in TYPE_PROMPTS:
+        raise ValueError(f"Unknown content type: {content_type}. Valid: {CONTENT_TYPES}")
 
     avoid_block = ""
     if recent_titles:
         titles_str = "\n".join(f"- {t}" for t in recent_titles)
         avoid_block = (
             f"\n\nDo NOT repeat or closely resemble any of these recent titles:\n{titles_str}\n"
-            "Be creative and pick a DIFFERENT topic within this category."
+            "Be creative and pick a DIFFERENT topic."
         )
 
     client = anthropic.Anthropic()
@@ -102,7 +132,10 @@ def generate_content(category: str, recent_titles: list[str]) -> dict:
         messages=[
             {
                 "role": "user",
-                "content": f"Category: {category}\n\n{CATEGORY_PROMPTS[category]}{avoid_block}",
+                "content": (
+                    f"content_type: {content_type}\n\n"
+                    f"{TYPE_PROMPTS[content_type]}{avoid_block}"
+                ),
             }
         ],
     )
@@ -126,4 +159,6 @@ def generate_content(category: str, recent_titles: list[str]) -> dict:
     if missing:
         raise RuntimeError(f"Content generation missing fields: {missing}")
 
+    # Ensure content_type is set
+    data["content_type"] = content_type
     return data
