@@ -14,67 +14,68 @@ MODEL = "claude-sonnet-4-5-20250929"
 CATEGORY_PROMPTS: dict[str, str] = {
     "math_equations": (
         "Generate a visually striking mathematical equation, identity, or formula. "
-        "Include the LaTeX representation and a brief explanation of why it's beautiful or useful. "
-        "Choose from: calculus, linear algebra, number theory, topology, probability, combinatorics."
+        "Choose from: calculus, linear algebra, number theory, topology, probability, combinatorics. "
+        "The LaTeX field is REQUIRED — provide a beautiful, non-trivial equation."
     ),
     "coding_tips": (
-        "Generate a practical coding tip with a short code snippet. "
-        "Pick a language from Python, Go, Rust, or TypeScript. "
-        "Topics: clever stdlib usage, performance tricks, common pitfalls, elegant patterns."
+        "Generate a famous or beautiful equation from computer science or information theory. "
+        "Examples: Shannon entropy, Big-O recurrences, Bellman equation, RSA, Bayes' theorem. "
+        "The LaTeX field is REQUIRED."
     ),
     "science_facts": (
-        "Generate a mind-blowing science fact that most people don't know. "
-        "Cover biology, chemistry, astronomy, geology, or neuroscience. "
-        "Include one key number or measurement that makes it tangible."
+        "Generate a famous scientific equation or formula. "
+        "Cover: thermodynamics, chemistry, biology, astronomy, neuroscience. "
+        "Examples: Drake equation, Nernst equation, Boltzmann distribution. "
+        "The LaTeX field is REQUIRED."
     ),
     "motivational_quotes": (
-        "Generate an original motivational quote for builders, engineers, and creators. "
-        "NOT a famous quote — create something new and sharp. "
-        "Add a one-line reflection on why it matters."
+        "Generate a beautiful mathematical identity or theorem. "
+        "Examples: Ramanujan's infinite series, continued fractions, golden ratio identities. "
+        "The LaTeX field is REQUIRED."
     ),
     "tech_insights": (
-        "Generate an insight about software architecture, engineering principles, or system design. "
-        "Topics: distributed systems, API design, scaling patterns, reliability, developer experience."
+        "Generate an equation from systems/engineering. "
+        "Examples: Amdahl's law, Little's law, queuing theory, CAP theorem formalization. "
+        "The LaTeX field is REQUIRED."
     ),
     "algorithm_visualizations": (
-        "Generate a step-by-step breakdown of an algorithm. "
-        "Show the key steps with small examples. "
-        "Choose from: sorting, graph, dynamic programming, tree, string, or greedy algorithms."
+        "Generate a key algorithm recurrence or complexity equation. "
+        "Examples: Master theorem, DP recurrences, graph algorithm bounds. "
+        "The LaTeX field is REQUIRED."
     ),
     "physics_concepts": (
-        "Generate an explanation of a physics concept with its key equation. "
-        "Include the LaTeX for the equation. "
-        "Cover: mechanics, electromagnetism, thermodynamics, quantum mechanics, relativity, optics."
+        "Generate a beautiful physics equation. "
+        "Cover: mechanics, electromagnetism, thermodynamics, quantum mechanics, relativity, optics. "
+        "Examples: Maxwell's equations, Schrodinger equation, Einstein field equations. "
+        "The LaTeX field is REQUIRED."
     ),
     "historical_tech_moments": (
-        "Generate a post about a pivotal moment in computing history. "
-        "Include the year, the person/team, and why it changed everything. "
-        "Cover: hardware breakthroughs, language creation, internet milestones, AI landmarks."
+        "Generate a historically significant mathematical equation or formula. "
+        "Examples: Euler's formula, Fourier transform, Laplace transform, Gauss's law. "
+        "The LaTeX field is REQUIRED."
     ),
 }
 
 SYSTEM_PROMPT = """\
-You are a content creator for educational social media posts (Instagram & TikTok).
-Generate content that is informative, visually appealing, and engaging.
+You are a content creator for educational social media posts showcasing beautiful LaTeX equations.
+Every post MUST feature a LaTeX equation as the centerpiece.
 
 Respond ONLY with valid JSON in this exact format:
 {
-  "title": "Short catchy title (max 60 chars)",
-  "body": "Main content text (2-4 paragraphs, each 1-2 sentences)",
-  "latex": "LaTeX equation if applicable (just the math, no document wrapper), or null",
-  "code": "Code snippet if applicable, or null",
-  "code_language": "Language name if code is provided, or null",
-  "hashtags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "caption": "Instagram/TikTok caption (engaging, with emoji, 1-2 sentences + hashtags)"
+  "title": "Name of the equation/formula (max 50 chars)",
+  "body": "One sentence explaining what this equation means or why it matters",
+  "latex": "The LaTeX equation (just the math, no document wrapper) — THIS IS REQUIRED",
+  "hashtags": ["latex", "math", "equations"],
+  "caption": "Try useoctree.com to compile LaTeX instantly! #latex"
 }
 
 Rules:
-- Title must be attention-grabbing and concise
-- Body should educate and inspire — write for curious minds
-- If the category involves math or physics, include LaTeX for the key equation
-- If the category is coding_tips, include a code snippet
-- Hashtags: 5 relevant ones, no # prefix
-- Caption: write as if posting to Instagram — conversational, with emoji"""
+- The LaTeX field is REQUIRED — never return null
+- Title: name of the equation (e.g. "Euler's Identity", "Fourier Transform")
+- Body: one short sentence about the equation
+- LaTeX: the equation itself, raw LaTeX math (no \\begin{document}, no $$ wrappers)
+- Hashtags: always include "latex" as the first tag, then 2-4 relevant math/science tags
+- Caption: always start with "Try useoctree.com" and include #latex"""
 
 
 def generate_content(category: str, recent_titles: list[str]) -> dict:
