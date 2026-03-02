@@ -196,12 +196,127 @@ def _template_quote(content: dict, bg: str, accent: str, muted: str) -> str:
     )
 
 
+def _template_resume(content: dict, bg: str, accent: str, muted: str) -> str:
+    name = _escape_latex(content.get("name", "Jane Doe"))
+    job_title = _escape_latex(content.get("job_title", "Software Engineer"))
+    achievements = content.get("achievements", [])
+    skills = content.get("skills", [])
+
+    ach_items = "\n".join(
+        f"  \\item {{\\color{{white}} {_escape_latex(a)}}}" for a in achievements[:4]
+    )
+    skills_str = _escape_latex(" | ".join(skills[:8]))
+
+    return (
+        _latex_preamble(bg)
+        + f"{{\\fontsize{{14}}{{18}}\\selectfont\\color[HTML]{{{accent}}} RESUME — BUILT WITH \\LaTeX}}\\par\n"
+        "\\vspace{15pt}\n"
+        f"{{\\color[HTML]{{{accent}}}\\rule{{320pt}}{{1.5pt}}}}\\par\n"
+        "\\vspace{15pt}\n"
+        f"{{\\fontsize{{32}}{{38}}\\selectfont\\bfseries {name}}}\\par\n"
+        "\\vspace{5pt}\n"
+        f"{{\\fontsize{{18}}{{22}}\\selectfont\\color[HTML]{{{muted}}} {job_title}}}\\par\n"
+        "\\vspace{20pt}\n"
+        f"{{\\fontsize{{16}}{{20}}\\selectfont\\bfseries\\color[HTML]{{{accent}}} EXPERIENCE}}\\par\n"
+        "\\vspace{8pt}\n"
+        "\\begin{itemize}\n"
+        "\\setlength{\\itemsep}{6pt}\n"
+        f"{{\\fontsize{{14}}{{19}}\\selectfont\n{ach_items}\n}}\n"
+        "\\end{itemize}\n"
+        "\\vspace{15pt}\n"
+        f"{{\\fontsize{{16}}{{20}}\\selectfont\\bfseries\\color[HTML]{{{accent}}} SKILLS}}\\par\n"
+        "\\vspace{8pt}\n"
+        f"{{\\fontsize{{13}}{{18}}\\selectfont\\color[HTML]{{{muted}}} {skills_str}}}\\par\n"
+        + _branding(accent)
+        + _latex_footer()
+    )
+
+
+def _template_presentation(content: dict, bg: str, accent: str, muted: str) -> str:
+    slide_title = _escape_latex(content.get("slide_title", content["title"]))
+    bullets = content.get("bullets", [])
+    slide_eq = content.get("slide_equation", "")
+
+    bullet_items = "\n".join(
+        f"  \\item {{\\color{{white}} {_escape_latex(b)}}}" for b in bullets[:5]
+    )
+
+    eq_block = ""
+    if slide_eq:
+        eq_block = (
+            "\\vspace{15pt}\n"
+            "\\begin{center}\n"
+            f"  $\\displaystyle {slide_eq}$\n"
+            "\\end{center}\n"
+        )
+
+    return (
+        _latex_preamble(bg)
+        + f"{{\\fontsize{{14}}{{18}}\\selectfont\\color[HTML]{{{accent}}} PRESENTATION SLIDE}}\\par\n"
+        "\\vspace{10pt}\n"
+        f"{{\\color[HTML]{{{accent}}}\\rule{{360pt}}{{2pt}}}}\\par\n"
+        "\\vspace{20pt}\n"
+        f"{{\\fontsize{{30}}{{36}}\\selectfont\\bfseries {slide_title}}}\\par\n"
+        "\\vspace{20pt}\n"
+        "\\begin{itemize}\n"
+        "\\setlength{\\itemsep}{8pt}\n"
+        f"{{\\fontsize{{16}}{{22}}\\selectfont\n{bullet_items}\n}}\n"
+        "\\end{itemize}\n"
+        f"{eq_block}"
+        + _branding(accent)
+        + _latex_footer()
+    )
+
+
+def _template_research(content: dict, bg: str, accent: str, muted: str) -> str:
+    title = _escape_latex(content["title"])
+    authors = content.get("authors", ["Unknown"])
+    institution = _escape_latex(content.get("institution", ""))
+    body = _escape_latex(content["body"])
+    key_eq = content.get("key_equation", "")
+
+    authors_str = _escape_latex(", ".join(authors))
+
+    eq_block = ""
+    if key_eq:
+        eq_block = (
+            "\\vspace{15pt}\n"
+            "\\begin{center}\n"
+            f"  $\\displaystyle {key_eq}$\n"
+            "\\end{center}\n"
+            "\\vspace{10pt}\n"
+        )
+
+    return (
+        _latex_preamble(bg)
+        + f"{{\\fontsize{{14}}{{18}}\\selectfont\\color[HTML]{{{accent}}} RESEARCH PAPER}}\\par\n"
+        "\\vspace{10pt}\n"
+        f"{{\\color[HTML]{{{accent}}}\\rule{{320pt}}{{1.5pt}}}}\\par\n"
+        "\\vspace{20pt}\n"
+        f"{{\\fontsize{{26}}{{32}}\\selectfont\\bfseries {title}}}\\par\n"
+        "\\vspace{10pt}\n"
+        f"{{\\fontsize{{14}}{{18}}\\selectfont\\color[HTML]{{{muted}}} {authors_str}}}\\par\n"
+        "\\vspace{3pt}\n"
+        f"{{\\fontsize{{12}}{{16}}\\selectfont\\itshape\\color[HTML]{{{muted}}} {institution}}}\\par\n"
+        "\\vspace{20pt}\n"
+        f"{{\\fontsize{{16}}{{20}}\\selectfont\\bfseries\\color[HTML]{{{accent}}} Abstract}}\\par\n"
+        "\\vspace{8pt}\n"
+        f"{{\\fontsize{{14}}{{20}}\\selectfont\\color[HTML]{{{muted}}} {body}}}\\par\n"
+        f"{eq_block}"
+        + _branding(accent)
+        + _latex_footer()
+    )
+
+
 TEMPLATES = {
     "equation": _template_equation,
     "code_snippet": _template_code_snippet,
     "definition": _template_definition,
     "fact": _template_fact,
     "quote": _template_quote,
+    "resume": _template_resume,
+    "presentation": _template_presentation,
+    "research": _template_research,
 }
 
 
@@ -255,8 +370,12 @@ def render_image(
             headers=headers,
             timeout=30.0,
         )
-        if resp.status_code != 200:
+        # Even on non-200, the PDF may still be in the response body
+        has_pdf = resp.content[:5] == b"%PDF-"
+        if resp.status_code != 200 and not has_pdf:
             raise RuntimeError(f"LaTeX compile failed ({resp.status_code}): {resp.text[:300]}")
+        if resp.status_code != 200 and has_pdf:
+            log.warning("LaTeX compile returned %d but PDF was generated, proceeding", resp.status_code)
     except httpx.HTTPError as e:
         raise RuntimeError(f"LaTeX compile request failed: {e}")
 

@@ -30,6 +30,9 @@ CATEGORIES = [
     "definition",
     "fact",
     "quote",
+    "resume",
+    "presentation",
+    "research",
 ]
 
 # Alias for content_generator.py

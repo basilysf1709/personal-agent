@@ -42,6 +42,28 @@ TYPE_PROMPTS: dict[str, str] = {
         "It can be a famous quote from a real person (scientist, engineer, mathematician, "
         "programmer) OR an original insightful quote. Must feel authentic and punchy."
     ),
+    "resume": (
+        "Generate a polished resume/CV snippet showcasing LaTeX's typesetting power. "
+        "Create a fictional but realistic professional profile with: name, title, "
+        "2-3 bullet point achievements, and a skills section. "
+        "Pick from: software engineer, data scientist, ML researcher, quant trader, "
+        "robotics engineer, security researcher, systems architect, PhD candidate. "
+        "Make it look like a real high-quality LaTeX resume section."
+    ),
+    "presentation": (
+        "Generate a single presentation slide showcasing LaTeX Beamer's power. "
+        "Pick a topic from: tech talks, conference keynotes, lecture slides, startup pitches, "
+        "research presentations, workshop tutorials. "
+        "Include a slide title, 3-4 bullet points, and optionally a key equation or diagram description. "
+        "Make it look like a real Beamer slide."
+    ),
+    "research": (
+        "Generate a short research paper snippet (abstract or key result) showcasing LaTeX's "
+        "academic typesetting. Pick a field: machine learning, cryptography, quantum computing, "
+        "distributed systems, computational biology, theoretical CS, robotics, NLP. "
+        "Include a paper title, authors (fictional), and a 2-3 sentence abstract with "
+        "one key equation or result."
+    ),
 }
 
 SYSTEM_PROMPT = """\
@@ -99,6 +121,43 @@ For content_type "quote":
   "attribution": "Person's name and role, or 'Unknown' if original",
   "hashtags": ["motivation", "engineering", "quotes", "inspiration", "latex"],
   "caption": "Creative engaging caption here. Link in bio! #motivation #engineering #quotes"
+}
+
+For content_type "resume":
+{
+  "content_type": "resume",
+  "title": "LaTeX Resume Showcase (max 50 chars)",
+  "body": "One sentence about why LaTeX resumes stand out",
+  "name": "Full Name",
+  "job_title": "Senior Software Engineer",
+  "achievements": ["Led migration of...", "Reduced latency by...", "Published 3 papers on..."],
+  "skills": ["Python", "Rust", "Kubernetes", "ML"],
+  "hashtags": ["resume", "latex", "career", "jobs", "tech"],
+  "caption": "Creative engaging caption here. Link in bio! #resume #latex #career"
+}
+
+For content_type "presentation":
+{
+  "content_type": "presentation",
+  "title": "Slide title (max 50 chars)",
+  "body": "One sentence describing the presentation topic",
+  "slide_title": "The title shown on the slide",
+  "bullets": ["First key point", "Second key point", "Third key point"],
+  "slide_equation": "Optional LaTeX equation for the slide (or empty string)",
+  "hashtags": ["presentation", "latex", "beamer", "tech", "slides"],
+  "caption": "Creative engaging caption here. Link in bio! #presentation #latex #beamer"
+}
+
+For content_type "research":
+{
+  "content_type": "research",
+  "title": "Paper title (max 60 chars)",
+  "body": "2-3 sentence abstract of the paper",
+  "authors": ["Alice Chen", "Bob Smith", "Carol Zhang"],
+  "institution": "MIT CSAIL",
+  "key_equation": "Optional key LaTeX equation from the paper (or empty string)",
+  "hashtags": ["research", "latex", "academia", "science", "paper"],
+  "caption": "Creative engaging caption here. Link in bio! #research #latex #academia"
 }
 
 CAPTION RULES (CRITICAL):
