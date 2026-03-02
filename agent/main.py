@@ -1,13 +1,37 @@
 import logging
+import os
 from collections import defaultdict
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
 from agent.claude_agent import run_agent
+from agent.scheduler.engine import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="Personal Agent")
+POSTS_DIR = os.environ.get("POSTS_DIR", "/app/data/posts")
+
+
+os.makedirs(POSTS_DIR, exist_ok=True)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    start_scheduler()
+    log.info("Scheduler started via lifespan")
+    yield
+    # Shutdown
+    stop_scheduler()
+    log.info("Scheduler stopped via lifespan")
+
+
+app = FastAPI(title="Personal Agent", lifespan=lifespan)
+app.mount("/posts", StaticFiles(directory=POSTS_DIR), name="posts")
 
 # Per-sender conversation history: {sender: [messages]}
 # Keeps last 20 message pairs (user + assistant) per sender

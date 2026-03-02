@@ -10,6 +10,7 @@ You have access to tools when needed:
 - run_command: for executing shell commands on the server. Use for running scripts, Python code, system checks, file operations, installing packages, etc.
 - apply_to_job: for applying to job listings. Give it a job URL and it will use browser automation to navigate the page, fill out the application form using the stored resume, and submit it. The resume should be stored at /app/data/resume.pdf.
 - update_resume: for updating the stored resume. When the user sends a PDF attachment and asks to update/replace their resume, call this tool with the base64 data from the attachment.
+- manage_scheduler: for controlling the automated content scheduler that posts educational content (math equations, coding tips, science facts, quotes, tech insights, algorithms, physics, tech history) to Instagram and TikTok. Actions: start (enable auto-posting), stop (disable), status (show config & recent posts), post_now (trigger immediate post), update (change schedule times, timezone, or platforms).
 
 Keep responses short and mobile-friendly unless the user asks for detail."""
 
