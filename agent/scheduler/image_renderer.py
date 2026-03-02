@@ -2,6 +2,7 @@
 
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 
@@ -123,7 +124,7 @@ def render_image(
             timeout=15,
         )
         png_tmp = f"{png_prefix}.png"
-        os.rename(png_tmp, out_path)
+        shutil.move(png_tmp, out_path)
         log.info("Rendered image: %s", out_path)
         return out_path
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
