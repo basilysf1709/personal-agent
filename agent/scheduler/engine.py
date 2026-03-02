@@ -39,83 +39,77 @@ def _notify_whatsapp(message: str) -> None:
         log.warning("WhatsApp notification failed: %s", e)
 
 
-def _generate_and_render(post_type: str) -> tuple[str, str, dict, str]:
-    """Generate content, render media. Returns (post_id, title, content, content_type)."""
+def _run_post(post_type: str) -> str:
+    """Generate content, render, and publish. Core loop for both image and reel."""
     s = state.load()
     content_type = state.next_category(s)
     recent = state.recent_titles(s)
 
     log.info("Generating content for %s (%s)", post_type, content_type)
-    content = generate_content(content_type, recent)
+    try:
+        content = generate_content(content_type, recent)
+    except Exception as e:
+        msg = f"{post_type.title()} post failed (content gen): {e}"
+        log.error(msg)
+        state.save(s)
+        return msg
 
     post_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     title = content["title"]
 
     # Render the image (template chosen based on content_type)
     log.info("Rendering image for: %s [%s]", title, content_type)
-    image_path = render_image(
-        post_id=post_id,
-        category=content_type,
-        title=title,
-        body=content["body"],
-        content=content,
-    )
+    try:
+        image_path = render_image(
+            post_id=post_id,
+            category=content_type,
+            title=title,
+            body=content["body"],
+            content=content,
+        )
+    except Exception as e:
+        msg = f"{post_type.title()} post failed (render): {e}"
+        log.error(msg)
+        state.save(s)
+        return msg
 
     if post_type == "reel":
-        log.info("Rendering video for: %s", title)
-        render_video(post_id, image_path)
+        try:
+            log.info("Rendering video for: %s", title)
+            render_video(post_id, image_path)
+        except Exception as e:
+            msg = f"Reel post failed (video render): {e}"
+            log.error(msg)
+            state.save(s)
+            return msg
 
-    return post_id, title, content, content_type
+    caption = content.get("caption", title)
+    platform_results = {}
+
+    if "instagram" in s.get("platforms", []):
+        if post_type == "reel":
+            log.info("Publishing reel to Instagram...")
+            platform_results["instagram_reel"] = instagram.publish_reel(post_id, caption)
+        else:
+            log.info("Publishing image to Instagram...")
+            platform_results["instagram"] = instagram.publish(post_id, caption)
+
+    state.record_post(s, post_id, content_type, title, platform_results, post_type=post_type)
+
+    emoji = "🎬" if post_type == "reel" else "📸"
+    summary = _build_summary(title, content_type, platform_results, post_type)
+    _notify_whatsapp(f"{emoji} {post_type.title()} post complete!\n\n{summary}")
+    return summary
 
 
 def run_image_post() -> str:
     """Generate content and post as an image."""
-    s = state.load()
-    try:
-        post_id, title, content, category = _generate_and_render("image")
-    except Exception as e:
-        msg = f"Image post failed: {e}"
-        log.error(msg)
-        state.save(s)
-        return msg
-
-    caption = content.get("caption", title)
-    platform_results = {}
-
-    if "instagram" in s.get("platforms", []):
-        log.info("Publishing image to Instagram...")
-        platform_results["instagram"] = instagram.publish(post_id, caption)
-
-    state.record_post(s, post_id, category, title, platform_results, post_type="image")
-
-    summary = _build_summary(title, category, platform_results, "image")
-    _notify_whatsapp(f"📸 Image post complete!\n\n{summary}")
-    return summary
+    return _run_post("image")
 
 
 def run_reel_post() -> str:
     """Generate content and post as a Reel video."""
-    s = state.load()
-    try:
-        post_id, title, content, category = _generate_and_render("reel")
-    except Exception as e:
-        msg = f"Reel post failed: {e}"
-        log.error(msg)
-        state.save(s)
-        return msg
-
-    caption = content.get("caption", title)
-    platform_results = {}
-
-    if "instagram" in s.get("platforms", []):
-        log.info("Publishing reel to Instagram...")
-        platform_results["instagram_reel"] = instagram.publish_reel(post_id, caption)
-
-    state.record_post(s, post_id, category, title, platform_results, post_type="reel")
-
-    summary = _build_summary(title, category, platform_results, "reel")
-    _notify_whatsapp(f"🎬 Reel post complete!\n\n{summary}")
-    return summary
+    return _run_post("reel")
 
 
 def run_post_cycle() -> str:
