@@ -23,28 +23,13 @@ COMPILE_JWT = os.environ.get("COMPILE_JWT_TOKEN", "") or os.environ.get(
 
 POSTS_DIR = os.environ.get("POSTS_DIR", "/app/data/posts")
 
-# 12 color palettes: (bg, accent, muted_text)
-# Rotated based on post_id hash so every post looks different
-COLOR_PALETTES = [
-    ("1a1a2e", "e94560", "cccccc"),   # navy + crimson
-    ("0d1117", "58a6ff", "8b949e"),   # github dark + blue
-    ("0f0c29", "24fe41", "b0b0b0"),   # deep indigo + neon green
-    ("2d1b69", "f8e71c", "d0c4f7"),   # purple + gold
-    ("1b1b2f", "e43f5a", "9e9eb8"),   # dark blue + coral
-    ("0a0a23", "f5a623", "a0a0c0"),   # midnight + orange
-    ("0c0032", "7b2ff7", "c0b0e0"),   # dark violet + purple
-    ("1a1a1a", "ff6b35", "bbbbbb"),   # charcoal + burnt orange
-    ("0b132b", "3a86ff", "a0b4d0"),   # navy + bright blue
-    ("1c1c3c", "ff006e", "c0b0c8"),   # dark + hot pink
-    ("0d1b2a", "00f5d4", "90c0b0"),   # dark teal + cyan
-    ("191919", "ffd166", "b8b8b8"),   # black + warm yellow
-]
+# Fixed white-background palette: (bg, accent, muted_text)
+COLOR_PALETTE = ("ffffff", "e94560", "555555")
 
 
 def _pick_palette(post_id: str) -> tuple[str, str, str]:
-    """Pick a color palette based on post_id hash for variety."""
-    h = int(hashlib.md5(post_id.encode()).hexdigest(), 16)
-    return COLOR_PALETTES[h % len(COLOR_PALETTES)]
+    """Return the fixed white-background palette."""
+    return COLOR_PALETTE
 
 
 def _escape_latex(text: str) -> str:
@@ -69,7 +54,7 @@ def _latex_preamble(bg_color: str) -> str:
         "\\begin{varwidth}{480pt}\n"
         "\\centering\n"
         f"\\pagecolor[HTML]{{{bg_color}}}\n"
-        "\\color{white}\n\n"
+        "\\color{black}\n\n"
     )
 
 
@@ -128,7 +113,7 @@ def _template_code_snippet(content: dict, bg: str, accent: str, muted: str) -> s
         "\\vspace{5pt}\n"
         f"{{\\fontsize{{14}}{{18}}\\selectfont\\bfseries\\color[HTML]{{{accent}}} {_escape_latex(lang)}}}\\par\n"
         "\\vspace{10pt}\n"
-        "{\\ttfamily\\fontsize{13}{17}\\selectfont\\color[HTML]{e6edf3}\n"
+        "{\\ttfamily\\fontsize{13}{17}\\selectfont\\color[HTML]{222222}\n"
         f"\\begin{{verbatim}}\n{code}\n\\end{{verbatim}}\n"
         "}\\par\n"
         "\\vspace{10pt}\n"
@@ -203,7 +188,7 @@ def _template_resume(content: dict, bg: str, accent: str, muted: str) -> str:
     skills = content.get("skills", [])
 
     ach_items = "\n".join(
-        f"  \\item {{\\color{{white}} {_escape_latex(a)}}}" for a in achievements[:4]
+        f"  \\item {{\\color{{black}} {_escape_latex(a)}}}" for a in achievements[:4]
     )
     skills_str = _escape_latex(" | ".join(skills[:8]))
 
@@ -238,7 +223,7 @@ def _template_presentation(content: dict, bg: str, accent: str, muted: str) -> s
     slide_eq = content.get("slide_equation", "")
 
     bullet_items = "\n".join(
-        f"  \\item {{\\color{{white}} {_escape_latex(b)}}}" for b in bullets[:5]
+        f"  \\item {{\\color{{black}} {_escape_latex(b)}}}" for b in bullets[:5]
     )
 
     eq_block = ""

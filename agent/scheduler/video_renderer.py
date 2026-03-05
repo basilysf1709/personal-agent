@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 # Instagram Reels: 1080x1920 (9:16)
 REEL_W, REEL_H = 1080, 1920
-BG_COLOR = "1a1a2e"
+BG_COLOR = "ffffff"
 
 POSTS_DIR = os.environ.get("POSTS_DIR", "/app/data/posts")
 SOUND_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "bgm.mp3")
@@ -38,8 +38,8 @@ def _compile_cta_frame() -> str:
         "\\begin{document}\n"
         "\\begin{varwidth}{480pt}\n"
         "\\centering\n"
-        "\\pagecolor[HTML]{1a1a2e}\n"
-        "\\color{white}\n"
+        "\\pagecolor[HTML]{ffffff}\n"
+        "\\color{black}\n"
         "\n"
         "{\\fontsize{42}{50}\\selectfont\\bfseries Try}\\par\n"
         "\\vspace{20pt}\n"
