@@ -43,7 +43,7 @@ def _compile_cta_frame() -> str:
         "\n"
         "{\\fontsize{42}{50}\\selectfont\\bfseries Try}\\par\n"
         "\\vspace{20pt}\n"
-        "{\\fontsize{48}{58}\\selectfont\\bfseries\\color[HTML]{e94560} useoctree.com}\\par\n"
+        "{\\fontsize{48}{58}\\selectfont\\bfseries\\color[HTML]{6A9FFF} useoctree.com}\\par\n"
         "\n"
         "\\end{varwidth}\n"
         "\\end{document}\n"

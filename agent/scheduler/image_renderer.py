@@ -24,7 +24,7 @@ COMPILE_JWT = os.environ.get("COMPILE_JWT_TOKEN", "") or os.environ.get(
 POSTS_DIR = os.environ.get("POSTS_DIR", "/app/data/posts")
 
 # Fixed white-background palette: (bg, accent, muted_text)
-COLOR_PALETTE = ("ffffff", "e94560", "555555")
+COLOR_PALETTE = ("ffffff", "6A9FFF", "555555")
 
 
 def _pick_palette(post_id: str) -> tuple[str, str, str]:
